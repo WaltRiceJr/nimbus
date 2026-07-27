@@ -1,0 +1,22 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Claude Code local (machine-specific) settings
+.claude/settings.local.json
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

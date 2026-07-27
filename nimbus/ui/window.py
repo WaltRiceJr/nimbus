@@ -1,0 +1,139 @@
+"""The application window and navigation between dashboard and locations."""
+
+from __future__ import annotations
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
+
+from ..model import Location, WeatherBundle
+from ..nws import WeatherService
+from ..store import FavoritesStore
+from .dashboard import DashboardPage
+from .detail import LocationPage
+
+#: Window heights for the collapsed and expanded location views.
+COMPACT_HEIGHT = 760
+EXPANDED_HEIGHT = 980
+
+#: Pinned locations are re-fetched on this cadence while the app is open.
+AUTO_REFRESH_SECONDS = 15 * 60
+
+
+class NimbusWindow(Adw.ApplicationWindow):
+    """Hosts the navigation stack, the shared service and the toast overlay."""
+
+    def __init__(self, application: Adw.Application) -> None:
+        super().__init__(application=application)
+        self.set_title("Nimbus")
+        self.set_default_size(1080, COMPACT_HEIGHT)
+
+        self.favorites = FavoritesStore()
+        self.service = WeatherService()
+
+        self._pages: dict[str, LocationPage] = {}
+        self._active_page: Adw.NavigationPage | None = None
+        self._refresh_source = 0
+
+        self._toasts = Adw.ToastOverlay()
+        self._navigation = Adw.NavigationView()
+        self._toasts.set_child(self._navigation)
+        self.set_content(self._toasts)
+
+        self._dashboard = DashboardPage(self)
+        self._navigation.add(self._dashboard)
+
+        self.connect("close-request", self._on_close)
+        self._dashboard.reload()
+        self._restore_last_view()
+        self._start_auto_refresh()
+
+    # -- navigation -------------------------------------------------------
+
+    def set_active_page(self, page: Adw.NavigationPage) -> None:
+        self._active_page = page
+
+    def open_location(
+        self, location: Location, bundle: WeatherBundle | None = None
+    ) -> None:
+        """Push the page for *location*, reusing it if already built."""
+        page = self._pages.get(location.key)
+        if page is None:
+            page = LocationPage(self, location)
+            self._pages[location.key] = page
+
+        if self._navigation.find_page(location.key) is not None:
+            # Already somewhere in the stack -- surface it rather than
+            # pushing a second copy, which libadwaita rejects.
+            self._navigation.pop_to_tag(location.key)
+        else:
+            self._navigation.push(page)
+        self.favorites.set_last_viewed(location)
+
+        if bundle is not None:
+            page.apply_bundle(bundle)
+        else:
+            page.refresh()
+
+    def note_expanded(self, expanded: bool) -> None:
+        """Grow the window when a location page expands its details."""
+        if self.is_maximized() or self.is_fullscreen():
+            return
+        width, height = self.get_default_size()
+        target = EXPANDED_HEIGHT if expanded else COMPACT_HEIGHT
+        if expanded and height >= target:
+            return
+        self.set_default_size(width, target)
+
+    def show_toast(self, message: str) -> None:
+        self._toasts.add_toast(Adw.Toast(title=message, timeout=4))
+
+    def begin_search(self) -> None:
+        """Pop back to the dashboard and focus its search entry."""
+        while self._navigation.get_visible_page() is not self._dashboard:
+            if not self._navigation.pop():
+                break
+        self._dashboard.focus_search()
+
+    def refresh_active(self) -> None:
+        """Reload whichever page is in front."""
+        page = self._navigation.get_visible_page()
+        if isinstance(page, LocationPage):
+            page.refresh(force=True)
+        else:
+            self._dashboard.reload()
+
+    # -- lifecycle --------------------------------------------------------
+
+    def _restore_last_view(self) -> None:
+        key = self.favorites.last_viewed
+        if not key:
+            return
+        location = self.favorites.find(key)
+        if location is not None:
+            # Defer so the dashboard is fully realised underneath first.
+            GLib.idle_add(self._push_restored, location)
+
+    def _push_restored(self, location: Location) -> bool:
+        self.open_location(location)
+        return GLib.SOURCE_REMOVE
+
+    def _start_auto_refresh(self) -> None:
+        self._refresh_source = GLib.timeout_add_seconds(
+            AUTO_REFRESH_SECONDS, self._on_auto_refresh
+        )
+
+    def _on_auto_refresh(self) -> bool:
+        self._dashboard.reload()
+        if isinstance(self._active_page, LocationPage):
+            self._active_page.refresh()
+        return GLib.SOURCE_CONTINUE
+
+    def _on_close(self, *_args) -> bool:
+        if self._refresh_source:
+            GLib.source_remove(self._refresh_source)
+            self._refresh_source = 0
+        self.service.shutdown()
+        return False

@@ -1,0 +1,441 @@
+/* Nimbus stylesheet.
+ *
+ * The sky illustrations supply the colour, so the chrome stays quiet:
+ * translucent panels, restrained type, and one accent borrowed from the
+ * system theme. Text that sits over a sky is always white with a shadow,
+ * since the backdrop ranges from pale noon blue to near-black midnight.
+ */
+
+/* ---------------------------------------------------------------- hero */
+
+.hero {
+  background-color: #0b1020;
+}
+
+.hero-header {
+  background: none;
+  box-shadow: none;
+  border: none;
+}
+
+.hero-header button {
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.hero-header button:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.hero-content {
+  padding: 26px 32px 30px 32px;
+}
+
+.hero-place {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.86);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  margin-bottom: 10px;
+}
+
+.hero-temp {
+  font-size: 86px;
+  font-weight: 400;
+  color: #ffffff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.45);
+  margin: 0;
+  padding: 0;
+}
+
+.hero-condition {
+  font-size: 21px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+  margin-top: 4px;
+}
+
+.hero-detail {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  margin-top: 6px;
+}
+
+/* --------------------------------------------------------------- body */
+
+.page-body {
+  padding: 20px 24px 28px 24px;
+}
+
+.card-panel {
+  background-color: alpha(currentColor, 0.045);
+  border: 1px solid alpha(currentColor, 0.07);
+  border-radius: 16px;
+  padding: 16px 18px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 4px;
+}
+
+/* The hourly card carries no padding of its own: the strip paints its
+   background, heading and dates edge to edge inside it. */
+.card-panel-flush {
+  padding: 0;
+}
+
+.hourly-scroll {
+  padding: 0;
+}
+
+.hourly-scroll undershoot.left,
+.hourly-scroll undershoot.right {
+  background: none;
+}
+
+.reveal-hint {
+  border-radius: 999px;
+  padding: 8px 22px;
+  font-weight: 600;
+  font-size: 13px;
+  background-color: alpha(currentColor, 0.07);
+  border: none;
+  box-shadow: none;
+  margin-top: 2px;
+}
+
+.reveal-hint:hover {
+  background-color: alpha(currentColor, 0.13);
+}
+
+/* ------------------------------------------------------------ forecast */
+
+.forecast-period {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+  margin-top: 6px;
+}
+
+.forecast-text {
+  font-size: 14.5px;
+  line-height: 1.55;
+  opacity: 0.82;
+}
+
+.day-row {
+  padding: 7px 4px;
+  border-radius: 10px;
+}
+
+.day-row:hover {
+  background-color: alpha(currentColor, 0.05);
+}
+
+.day-name {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.day-precip {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.62;
+}
+
+.day-high {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.day-low {
+  font-size: 15px;
+  opacity: 0.55;
+}
+
+/* --------------------------------------------------------------- stats */
+
+.stat-grid {
+  margin-top: 4px;
+}
+
+.stat-tile {
+  background-color: alpha(currentColor, 0.05);
+  border-radius: 12px;
+  padding: 11px 14px;
+}
+
+.stat-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  opacity: 0.5;
+}
+
+.stat-value {
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.stat-caption {
+  font-size: 11.5px;
+  opacity: 0.55;
+}
+
+.moon-row {
+  background-color: alpha(currentColor, 0.05);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-top: 2px;
+}
+
+/* -------------------------------------------------------------- alerts */
+
+.alert-card {
+  border-radius: 14px;
+  padding: 13px 16px;
+  border: 1px solid transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+.alert-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.alert-headline {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.alert-until {
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+/* The alert body sits directly in its scroll area -- no card, no frame.
+   Monospace is deliberate: NWS bodies contain column-aligned county lists
+   that only line up in a fixed-width face. */
+.alert-body {
+  font-family: monospace;
+  font-size: 13px;
+  /* NWS bodies are already broken into short lines, so generous leading
+     spreads them out and makes the text harder to scan, not easier. */
+  line-height: 1.15;
+  margin: 18px 24px 24px 24px;
+}
+
+/* Severity is carried by the tint and the icon only. Fixing a text colour
+   here would suit one theme and wash out in the other, so the label keeps
+   the theme foreground and stays readable in both. */
+.severity-extreme {
+  background-color: alpha(#e01b24, 0.18);
+  border-color: alpha(#e01b24, 0.55);
+}
+
+.severity-extreme .alert-icon {
+  color: #e01b24;
+}
+
+.severity-severe {
+  background-color: alpha(#e66100, 0.18);
+  border-color: alpha(#e66100, 0.55);
+}
+
+.severity-severe .alert-icon {
+  color: #e66100;
+}
+
+.severity-moderate {
+  background-color: alpha(#e5a50a, 0.16);
+  border-color: alpha(#e5a50a, 0.5);
+}
+
+.severity-moderate .alert-icon {
+  color: #c8890a;
+}
+
+.severity-minor,
+.severity-unknown {
+  background-color: alpha(#3584e4, 0.14);
+  border-color: alpha(#3584e4, 0.45);
+}
+
+.severity-minor .alert-icon,
+.severity-unknown .alert-icon {
+  color: #3584e4;
+}
+
+/* ----------------------------------------------------------- dashboard */
+
+.dashboard-clamp {
+  padding: 20px 22px 28px 22px;
+}
+
+.location-card {
+  padding: 0;
+  border-radius: 18px;
+  border: none;
+  background-color: #0b1020;
+  background-image: none;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.16),
+    0 6px 18px rgba(0, 0, 0, 0.22);
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.location-card:hover {
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 12px 30px rgba(0, 0, 0, 0.34);
+}
+
+/* Drawn as an inset ring rather than an outline so it follows the card's
+   rounded corners and survives the clipping that keeps the sky inside them. */
+.location-card.has-alert {
+  box-shadow:
+    inset 0 0 0 2px alpha(#e66100, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.16),
+    0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.location-card.has-alert:hover {
+  box-shadow:
+    inset 0 0 0 2px alpha(#e66100, 0.9),
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 12px 30px rgba(0, 0, 0, 0.34);
+}
+
+.card-content {
+  padding: 15px 17px;
+}
+
+.card-place {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.card-state {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+}
+
+.card-temp {
+  font-size: 42px;
+  font-weight: 400;
+  margin-bottom: 2px;
+  color: #ffffff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+}
+
+.card-condition {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+}
+
+.card-range {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+}
+
+.card-remove {
+  margin: 8px;
+  padding: 5px;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.6);
+  background: none;
+  box-shadow: none;
+  border: none;
+  opacity: 0;
+  transition: opacity 160ms ease, background-color 160ms ease;
+}
+
+.card-root:hover .card-remove {
+  opacity: 1;
+  background-color: rgba(0, 0, 0, 0.32);
+}
+
+.card-remove:hover {
+  color: #ffffff;
+  background-color: alpha(#e01b24, 0.85);
+}
+
+/* -------------------------------------------------------------- search */
+
+.results-clamp {
+  padding: 22px 18px;
+}
+
+.results-status {
+  font-size: 14px;
+  opacity: 0.6;
+  padding: 18px;
+}
+
+.search-row {
+  padding: 10px 14px;
+}
+
+.search-icon {
+  opacity: 0.45;
+}
+
+.search-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.search-subtitle {
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.hero-header.scrolled {
+  background-color: var(--headerbar-bg-color, @headerbar_bg_color);
+  box-shadow: 0 1px 0 alpha(currentColor, 0.1);
+}
+
+.hero-header.scrolled button {
+  color: inherit;
+  text-shadow: none;
+}
+
+/* --------------------------------------------------- search toolbar */
+
+.search-toolbar {
+  padding: 10px 16px 12px 16px;
+}
+
+/* ---------------------------------------------------------------- radar */
+
+.radar-map {
+  border-radius: 12px;
+  background-color: #10141f;
+}
+
+.radar-range {
+  font-size: 11.5px;
+  opacity: 0.6;
+  margin-right: 4px;
+}

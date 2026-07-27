@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Nimbus
+GenericName=Weather
+Comment=Weather for the United States, from the National Weather Service
+Exec=@EXEC@
+Icon=org.nimbus.Weather
+Terminal=false
+Categories=GNOME;GTK;Utility;
+Keywords=weather;forecast;temperature;rain;snow;radar;NWS;
+StartupNotify=true
+StartupWMClass=org.nimbus.Weather
