@@ -516,7 +516,9 @@ class DayRangeBar(Gtk.Widget):
         self._week_high = 1.0
         self._is_today = False
         self._now_temp: float | None = None
-        self.set_size_request(150, 26)
+        # Narrow enough that a 7-day row still fits a single flow column;
+        # hexpand stretches the bar when there is more room.
+        self.set_size_request(80, 26)
         self.set_hexpand(True)
         self.set_valign(Gtk.Align.CENTER)
 

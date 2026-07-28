@@ -95,8 +95,9 @@
 .card-panel {
   background-color: alpha(currentColor, 0.045);
   border: 1px solid alpha(currentColor, 0.07);
-  border-radius: 16px;
+  border-radius: 18px;
   padding: 16px 18px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .section-title {
@@ -213,11 +214,9 @@
   opacity: 0.55;
 }
 
-.moon-row {
-  background-color: alpha(currentColor, 0.05);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-top: 2px;
+.moon-name {
+  font-size: 21px;
+  font-weight: 600;
 }
 
 /* -------------------------------------------------------------- alerts */

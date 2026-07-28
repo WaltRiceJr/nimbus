@@ -27,7 +27,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import astro
 from ..conditions import display_name
@@ -37,6 +37,15 @@ from .charts import DayRangeBar, HourlyStrip, MoonDial, SunArc, add_drag_to_pan
 from .radar import RadarCard
 
 HERO_HEIGHT = 340
+
+#: The expanded panel flows its cards into columns of at least this width.
+FLOW_COLUMN_MIN = 420
+FLOW_MAX_COLUMNS = 3
+FLOW_SPACING = 18
+
+#: The body never grows wider than this, so cards keep a readable measure
+#: on very wide windows.
+BODY_MAX_WIDTH = 1500
 
 
 def _fmt_time(moment: datetime | None, tz) -> str:
@@ -248,6 +257,102 @@ class DayRow(Gtk.Box):
         self.set_tooltip_text(day.detailed_forecast or day.short_forecast)
 
 
+class ColumnFlowLayout(Gtk.LayoutManager):
+    """Packs children into as many equal-width columns as fit.
+
+    Children keep their natural height and are dealt, in order, into the
+    currently shortest column, so cards flow and rebalance live as the
+    window is resized -- one column when narrow, up to three when wide.
+    """
+
+    def __init__(self, min_column_width: int, max_columns: int, spacing: int) -> None:
+        super().__init__()
+        self._min_column_width = min_column_width
+        self._max_columns = max_columns
+        self._spacing = spacing
+
+    def _children(self, widget: Gtk.Widget):
+        child = widget.get_first_child()
+        while child is not None:
+            if child.should_layout():
+                yield child
+            child = child.get_next_sibling()
+
+    def _column_widths(self, widget: Gtk.Widget, width: int) -> list[int]:
+        # A column must hold the widest card at its minimum, or GTK would
+        # underallocate that card and clip its content.
+        floor = self._min_column_width
+        for child in self._children(widget):
+            child_min, _, _, _ = child.measure(Gtk.Orientation.HORIZONTAL, -1)
+            floor = max(floor, child_min)
+        count = (width + self._spacing) // (floor + self._spacing)
+        count = max(1, min(self._max_columns, count))
+        content = width - self._spacing * (count - 1)
+        base, extra = divmod(content, count)
+        return [base + (1 if i < extra else 0) for i in range(count)]
+
+    def _place(self, widget: Gtk.Widget, width: int):
+        """Compute (child, x, y, w, h) for every child, and the total height."""
+        widths = self._column_widths(widget, width)
+        offsets = []
+        x = 0
+        for w in widths:
+            offsets.append(x)
+            x += w + self._spacing
+        heights = [0] * len(widths)
+        placed = []
+        for child in self._children(widget):
+            column = heights.index(min(heights))
+            w = widths[column]
+            _, natural, _, _ = child.measure(Gtk.Orientation.VERTICAL, w)
+            placed.append((child, offsets[column], heights[column], w, natural))
+            heights[column] += natural + self._spacing
+        total = max(heights) - self._spacing if placed else 0
+        return placed, total
+
+    def do_get_request_mode(self, _widget) -> Gtk.SizeRequestMode:
+        return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
+
+    def do_measure(self, widget, orientation, for_size):
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            minimum = natural = 0
+            for child in self._children(widget):
+                child_min, child_nat, _, _ = child.measure(orientation, -1)
+                minimum = max(minimum, child_min)
+                natural = max(natural, child_nat)
+            return minimum, max(minimum, natural), -1, -1
+        width = for_size if for_size >= 0 else self._min_column_width
+        _, total = self._place(widget, width)
+        return total, total, -1, -1
+
+    def do_allocate(self, widget, width, _height, _baseline) -> None:
+        placed, _ = self._place(widget, width)
+        for child, x, y, w, h in placed:
+            transform = Gsk.Transform.new().translate(Graphene.Point().init(x, y))
+            child.allocate(w, h, -1, transform)
+
+
+class ColumnFlow(Gtk.Widget):
+    """A container whose children flow into balanced columns."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.set_layout_manager(
+            ColumnFlowLayout(FLOW_COLUMN_MIN, FLOW_MAX_COLUMNS, FLOW_SPACING)
+        )
+
+    def append(self, child: Gtk.Widget) -> None:
+        child.set_parent(self)
+
+    def do_dispose(self) -> None:
+        child = self.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            child.unparent()
+            child = nxt
+        Gtk.Widget.do_dispose(self)
+
+
 class LocationPage(Adw.NavigationPage):
     """Weather for one location, with a collapsed and an expanded state."""
 
@@ -302,7 +407,12 @@ class LocationPage(Adw.NavigationPage):
 
         column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         column.append(self._build_hero())
-        column.append(self._build_body())
+        # The sky runs edge to edge; the cards below keep a readable measure.
+        clamp = Adw.Clamp()
+        clamp.set_maximum_size(BODY_MAX_WIDTH)
+        clamp.set_tightening_threshold(BODY_MAX_WIDTH)
+        clamp.set_child(self._build_body())
+        column.append(clamp)
         self._scroller.set_child(column)
 
         # The header floats transparently over the sky, so it needs a solid
@@ -394,12 +504,18 @@ class LocationPage(Adw.NavigationPage):
         self._revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self._revealer.set_transition_duration(280)
 
-        expanded = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
-        expanded.append(self._build_today_card())
-        expanded.append(self._build_radar_card())
-        expanded.append(self._build_week_card())
-        expanded.append(self._build_details_card())
-        self._revealer.set_child(expanded)
+        # Cards are appended in priority order: the flow deals each one into
+        # the shortest column, so this order reads top-to-bottom when narrow
+        # and keeps the important cards high when wide.
+        self._tiles: dict[str, StatTile] = {}
+        flow = ColumnFlow()
+        flow.append(self._build_today_card())
+        flow.append(self._build_radar_card())
+        flow.append(self._build_week_card())
+        flow.append(self._build_conditions_card())
+        flow.append(self._build_sun_card())
+        flow.append(self._build_moon_card())
+        self._revealer.set_child(flow)
         body.append(self._revealer)
 
         self._reveal_hint = Gtk.Button(label="Show forecast details")
@@ -413,9 +529,7 @@ class LocationPage(Adw.NavigationPage):
         return body
 
     def _build_today_card(self) -> Gtk.Widget:
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        card.add_css_class("card-panel")
-        card.append(_section_title("Today's forecast"))
+        card = _card("Today's forecast")
 
         self._today_period = Gtk.Label(xalign=0.0)
         self._today_period.add_css_class("forecast-period")
@@ -446,32 +560,33 @@ class LocationPage(Adw.NavigationPage):
         return self._radar
 
     def _build_week_card(self) -> Gtk.Widget:
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        card.add_css_class("card-panel")
-        card.append(_section_title("7-day forecast"))
+        card = _card("7-day forecast")
         self._week_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         card.append(self._week_box)
         return card
 
-    def _build_details_card(self) -> Gtk.Widget:
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        card.add_css_class("card-panel")
-        card.append(_section_title("Details & statistics"))
+    def _tile_row(self, *specs: tuple[str, str]) -> Gtk.Widget:
+        """A row of equal-width stat tiles, registered under their keys."""
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row.set_homogeneous(True)
+        for key, title in specs:
+            tile = StatTile(title)
+            self._tiles[key] = tile
+            row.append(tile)
+        return row
 
-        # Sun arc across the top of the panel.
-        self._sun_arc = SunArc()
-        card.append(self._sun_arc)
+    def _build_conditions_card(self) -> Gtk.Widget:
+        card = _card("Current conditions")
 
         grid = Gtk.FlowBox()
         grid.set_selection_mode(Gtk.SelectionMode.NONE)
         grid.set_homogeneous(True)
         grid.set_min_children_per_line(2)
-        grid.set_max_children_per_line(4)
+        grid.set_max_children_per_line(3)
         grid.set_row_spacing(6)
         grid.set_column_spacing(6)
         grid.add_css_class("stat-grid")
 
-        self._tiles: dict[str, StatTile] = {}
         for key, title in (
             ("feels", "Feels like"),
             ("humidity", "Humidity"),
@@ -479,43 +594,52 @@ class LocationPage(Adw.NavigationPage):
             ("wind", "Wind"),
             ("pressure", "Pressure"),
             ("visibility", "Visibility"),
-            ("sunrise", "Sunrise"),
-            ("sunset", "Sunset"),
-            ("daylength", "Day length"),
-            ("moonrise", "Moonrise"),
-            ("moonset", "Moonset"),
             ("station", "Station"),
         ):
             tile = StatTile(title)
             self._tiles[key] = tile
             grid.append(tile)
         card.append(grid)
+        return card
 
-        # Moon phase gets its own row with the drawn dial.
-        moon_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
-        moon_row.add_css_class("moon-row")
+    def _build_sun_card(self) -> Gtk.Widget:
+        card = _card("Sun & daylight")
+        self._sun_arc = SunArc()
+        card.append(self._sun_arc)
+        card.append(
+            self._tile_row(
+                ("sunrise", "Sunrise"),
+                ("sunset", "Sunset"),
+                ("daylength", "Day length"),
+            )
+        )
+        return card
 
+    def _build_moon_card(self) -> Gtk.Widget:
+        card = _card("Moon")
+
+        face = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
         self._moon_dial = MoonDial(size=88)
-        moon_row.append(self._moon_dial)
+        face.append(self._moon_dial)
 
-        moon_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        moon_text.set_valign(Gtk.Align.CENTER)
-
-        moon_title = Gtk.Label(label="MOON PHASE", xalign=0.0)
-        moon_title.add_css_class("stat-title")
-        moon_text.append(moon_title)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        text.set_valign(Gtk.Align.CENTER)
 
         self._moon_name = Gtk.Label(label="--", xalign=0.0)
-        self._moon_name.add_css_class("stat-value")
-        moon_text.append(self._moon_name)
+        self._moon_name.add_css_class("moon-name")
+        text.append(self._moon_name)
 
         self._moon_caption = Gtk.Label(label="", xalign=0.0)
         self._moon_caption.add_css_class("stat-caption")
-        moon_text.append(self._moon_caption)
+        self._moon_caption.set_wrap(True)
+        text.append(self._moon_caption)
 
-        moon_row.append(moon_text)
-        card.append(moon_row)
+        face.append(text)
+        card.append(face)
 
+        card.append(
+            self._tile_row(("moonrise", "Moonrise"), ("moonset", "Moonset"))
+        )
         return card
 
     # -- interaction ------------------------------------------------------
@@ -737,3 +861,10 @@ def _section_title(text: str) -> Gtk.Label:
     label = Gtk.Label(label=text, xalign=0.0)
     label.add_css_class("section-title")
     return label
+
+
+def _card(title: str) -> Gtk.Box:
+    card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    card.add_css_class("card-panel")
+    card.append(_section_title(title))
+    return card
