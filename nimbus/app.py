@@ -113,9 +113,11 @@ class NimbusApplication(Adw.Application):
                 "endorsed by the National Weather Service or NOAA. "
                 "Sun and moon positions are computed locally."
             ),
-            website="https://www.weather.gov",
             license_type=Gtk.License.GPL_3_0,
         )
+        # add_link instead of the website property, so the row reads
+        # "Project Website" rather than the stock "Website" label.
+        about.add_link("Project Website", "https://github.com/WaltRiceJr/nimbus")
         about.add_credit_section("Data", ["National Weather Service (api.weather.gov)"])
         about.add_credit_section("Geocoding", ["Open-Meteo"])
         if self._window is not None:
