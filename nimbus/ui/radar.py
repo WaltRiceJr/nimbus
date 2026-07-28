@@ -23,11 +23,16 @@ geopolitical boundaries and the regional reflectivity mosaic -- so they
 overlay exactly. The boundary layer ships as dark lines on transparency,
 which would vanish against a dark card, so it is used as a mask and painted
 in a colour chosen to suit the current theme rather than drawn as-is.
+
+The mosaic layers are time-enabled, so the last hour of scans can be fetched
+and played as a loop. The current scan is the one worth reading, so the loop
+rests on it, then returns to the beginning and runs forward again.
 """
 
 from __future__ import annotations
 
 import io
+import logging
 import math
 from datetime import datetime, timezone
 
@@ -41,7 +46,10 @@ from gi.repository import Adw, GLib, Graphene, Gtk  # noqa: E402
 
 from ..conditions import RGB, mix
 from ..model import Location
+from ..nws import RADAR_FRAME_COUNT
 from .charts import _draw_text, _layout, _readable_on
+
+log = logging.getLogger(__name__)
 
 TAU = math.pi * 2
 
@@ -57,6 +65,13 @@ RESIZE_DEBOUNCE_MS = 450
 #: Ignore resizes smaller than this; the imagery is scaled to fit meanwhile.
 RESIZE_THRESHOLD = 48
 
+#: How long each past scan is held while the loop plays.
+FRAME_MS = 340
+#: And how long the loop rests on the current scan before starting over. The
+#: pause has to read as deliberate rather than as a stutter, so it is several
+#: times a normal frame.
+CURRENT_HOLD_MS = 2600
+
 
 class RadarMap(Gtk.Widget):
     """A radar view centred on one location."""
@@ -69,8 +84,12 @@ class RadarMap(Gtk.Widget):
         self._service = None
 
         self._basemap: cairo.ImageSurface | None = None
-        self._radar: cairo.ImageSurface | None = None
         self._legend: cairo.ImageSurface | None = None
+
+        #: Decoded echoes as (image, scan time), oldest first.
+        self._echoes: list[tuple[cairo.ImageSurface, datetime | None]] = []
+        self._index = 0
+        self._anim_source = 0
 
         self._zoom = DEFAULT_ZOOM
         self._fetched_at: datetime | None = None
@@ -78,6 +97,9 @@ class RadarMap(Gtk.Widget):
         self._requested_size: tuple[int, int] = (0, 0)
         self._resize_source = 0
         self._token = 0
+        #: The request generation whose loop has already been asked for, so
+        #: expanding and collapsing the panel cannot queue it twice.
+        self._loop_token = -1
 
         self.set_size_request(-1, MAP_HEIGHT)
         self.set_hexpand(True)
@@ -116,14 +138,11 @@ class RadarMap(Gtk.Widget):
         self._token += 1
         token = self._token
 
-        def apply(frame) -> None:
+        def apply_current(sequence) -> None:
             if token != self._token:
                 return  # superseded by a later request
-            self._basemap = _surface(frame.basemap)
-            self._radar = _surface(frame.reflectivity)
-            self._fetched_at = frame.fetched_at
-            self._status = ""
-            self.queue_draw()
+            self._adopt(sequence)
+            self._load_loop()
 
         def failed(error: Exception) -> None:
             if token != self._token:
@@ -132,15 +151,124 @@ class RadarMap(Gtk.Widget):
             self.queue_draw()
 
         self._service.load_radar(
-            self._location, self.width_km, width, height, apply, failed
+            self._location, self.width_km, width, height, apply_current, failed
         )
 
         if self._legend is None:
             self._service.load_radar_legend(self._set_legend, lambda _e: None)
 
+    def _load_loop(self) -> None:
+        """Fetch the frames behind the current scan, once they can be seen.
+
+        The loop costs a request per frame, so it waits for two things: a
+        current scan already on screen, and a mapped widget. The radar card
+        lives inside the details panel, which starts collapsed, so a location
+        the user never expands never asks for any of this.
+        """
+        if self._loop_token == self._token or not self.get_mapped():
+            return
+        if self._service is None or self._location is None or not self._echoes:
+            return
+
+        # Expanding the panel gives the map its real size for the first time.
+        # Fetching a dozen frames for the placeholder size, only for the
+        # debounced refetch to replace every one of them, is pure waste.
+        width, height = self._requested_size
+        if (
+            abs(self.get_width() - width) >= RESIZE_THRESHOLD
+            or abs(self.get_height() - height) >= RESIZE_THRESHOLD
+        ):
+            return
+
+        self._loop_token = self._token
+        token = self._token
+
+        def apply_loop(sequence) -> None:
+            if token != self._token:
+                return
+            self._adopt(sequence)
+
+        def failed(error: Exception) -> None:
+            # The current scan is already showing; losing the history costs
+            # the animation, not the map.
+            if token == self._token:
+                self._loop_token = -1
+            log.debug("radar loop unavailable: %s", error)
+
+        self._service.load_radar(
+            self._location,
+            self.width_km,
+            width,
+            height,
+            apply_loop,
+            failed,
+            count=RADAR_FRAME_COUNT,
+        )
+
+    def _adopt(self, sequence) -> None:
+        """Show a freshly fetched sequence, resting on its current scan."""
+        echoes = [
+            (image, echo.valid_at)
+            for echo in sequence.echoes
+            if (image := _surface(echo.reflectivity)) is not None
+        ]
+        if not echoes:
+            return
+
+        self._basemap = _surface(sequence.basemap)
+        self._echoes = echoes
+        self._index = len(echoes) - 1  # the current scan, where the loop rests
+        self._fetched_at = sequence.fetched_at
+        self._status = ""
+
+        # Drop any frame already scheduled against the previous sequence, so
+        # the new one gets its full pause on the current scan rather than
+        # inheriting whatever was left of an earlier frame's timer.
+        self._stop_animation()
+        self._sync_animation()
+        self.queue_draw()
+
     def _set_legend(self, payload: bytes) -> None:
         self._legend = _surface(payload)
         self.queue_draw()
+
+    # -- animation --------------------------------------------------------
+
+    def _sync_animation(self) -> None:
+        if len(self._echoes) > 1 and self.get_mapped():
+            self._arm()
+        else:
+            self._stop_animation()
+
+    def _arm(self) -> None:
+        """Schedule the next frame, dwelling on the current scan."""
+        if self._anim_source or len(self._echoes) < 2 or not self.get_mapped():
+            return
+        resting = self._index == len(self._echoes) - 1
+        self._anim_source = GLib.timeout_add(
+            CURRENT_HOLD_MS if resting else FRAME_MS, self._advance
+        )
+
+    def _advance(self) -> bool:
+        self._anim_source = 0
+        self._index = (self._index + 1) % len(self._echoes)
+        self.queue_draw()
+        self._arm()
+        return GLib.SOURCE_REMOVE
+
+    def _stop_animation(self) -> None:
+        if self._anim_source:
+            GLib.source_remove(self._anim_source)
+            self._anim_source = 0
+
+    def do_map(self) -> None:  # type: ignore[override]
+        Gtk.Widget.do_map(self)
+        self._load_loop()
+        self._sync_animation()
+
+    def do_unmap(self) -> None:  # type: ignore[override]
+        self._stop_animation()
+        Gtk.Widget.do_unmap(self)
 
     # -- resizing ---------------------------------------------------------
 
@@ -152,6 +280,9 @@ class RadarMap(Gtk.Widget):
             abs(width - requested_w) < RESIZE_THRESHOLD
             and abs(height - requested_h) < RESIZE_THRESHOLD
         ):
+            # Close enough to keep the imagery, so no refetch will follow --
+            # which makes this the moment a loop deferred at map time can go.
+            self._load_loop()
             return
 
         if self._resize_source:
@@ -169,6 +300,7 @@ class RadarMap(Gtk.Widget):
         if self._resize_source:
             GLib.source_remove(self._resize_source)
             self._resize_source = 0
+        self._stop_animation()
         Gtk.Widget.do_unroot(self)
 
     # -- painting ---------------------------------------------------------
@@ -195,8 +327,9 @@ class RadarMap(Gtk.Widget):
         # refetch lands.
         if self._basemap is not None:
             self._paint_layer(cr, self._basemap, width, height, mask_color=lines)
-        if self._radar is not None:
-            self._paint_layer(cr, self._radar, width, height, alpha=0.92)
+        if self._echoes:
+            echo = self._echoes[self._index][0]
+            self._paint_layer(cr, echo, width, height, alpha=0.92)
 
         # Radar returns can be bright anywhere, so the bottom captions get
         # their own scrim rather than relying on the map being dark there.
@@ -210,6 +343,7 @@ class RadarMap(Gtk.Widget):
         self._draw_marker(cr, width, height, fg)
         self._draw_scale_bar(cr, width, height, fg)
         self._draw_caption(cr, width, height, fg)
+        self._draw_timeline(cr, width, height)
         self._draw_legend(cr, width, height)
 
         if self._status:
@@ -296,9 +430,18 @@ class RadarMap(Gtk.Widget):
 
     def _draw_caption(self, cr, width: int, height: int, fg: RGB) -> None:
         parts = ["NOAA base reflectivity"]
-        if self._fetched_at is not None:
-            local = self._fetched_at.astimezone()
-            parts.append(local.strftime("%-I:%M %p"))
+
+        moment = self._frame_time()
+        if moment is not None:
+            parts.append(moment.astimezone().strftime("%-I:%M %p"))
+
+        # On any frame but the last, say how far back it is, so a time from
+        # forty minutes ago cannot be mistaken for the current picture.
+        newest = self._echoes[-1][1] if self._echoes else None
+        if moment is not None and newest is not None and newest != moment:
+            behind = (newest - moment).total_seconds() / 60.0
+            parts.append(f"\N{MINUS SIGN}{behind:.0f} min")
+
         text = "   ·   ".join(parts)
 
         # Measure rather than estimate, so the caption sits flush to the edge.
@@ -307,6 +450,38 @@ class RadarMap(Gtk.Widget):
             cr, self, text, width - text_w - 16, height - 20, 10.5,
             (1.0, 1.0, 1.0), 0.82, center=False,
         )
+
+    def _frame_time(self) -> datetime | None:
+        """When the scan on screen was valid, however well that is known."""
+        if self._echoes:
+            valid_at = self._echoes[self._index][1]
+            if valid_at is not None:
+                return valid_at
+        return self._fetched_at
+
+    def _draw_timeline(self, cr, width: int, height: int) -> None:
+        """A slim track showing where in the hour the visible frame sits."""
+        if len(self._echoes) < 2:
+            return
+
+        left, right = 16.0, width - 16.0
+        y = height - 8.0
+        head = left + (right - left) * (self._index / (len(self._echoes) - 1))
+
+        cr.save()
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_width(2.5)
+
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.22)
+        cr.move_to(left, y)
+        cr.line_to(right, y)
+        cr.stroke()
+
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.85)
+        cr.move_to(left, y)
+        cr.line_to(head, y)
+        cr.stroke()
+        cr.restore()
 
     def _draw_legend(self, cr, width: int, height: int) -> None:
         if self._legend is None:

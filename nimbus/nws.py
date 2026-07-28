@@ -38,6 +38,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ElementTree
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -253,6 +254,60 @@ def fetch_binary(url: str, ttl: timedelta, allow_stale: bool = True) -> bytes:
             return handle.read()
 
     raise WeatherError(f"Could not reach the radar service: {last_error}")
+
+
+def fetch_text(url: str) -> str:
+    """GET *url* and decode it as text, retrying transient failures.
+
+    Used for the radar server's capabilities document, which is XML. Callers
+    cache the parsed result rather than the document, which is large and only
+    a few dozen bytes of it are ever wanted.
+    """
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(0.6 * (2**attempt))
+
+    raise WeatherError(f"Could not reach the radar service: {last_error}")
+
+
+#: Sweep the image cache at most this often, and discard tiles older than this.
+_SWEEP_INTERVAL = 3600.0
+_SWEEP_MAX_AGE = timedelta(hours=12)
+_last_sweep = 0.0
+_sweep_lock = threading.Lock()
+
+
+def sweep_binary_cache() -> None:
+    """Delete image tiles too old to be served, even as a stale fallback.
+
+    An animation caches a dozen tiles per view, and every zoom level and
+    window size produces its own set, so without this the cache would grow
+    without bound across sessions.
+    """
+    global _last_sweep
+
+    now = time.time()
+    with _sweep_lock:
+        if now - _last_sweep < _SWEEP_INTERVAL:
+            return
+        _last_sweep = now
+
+    cutoff = now - _SWEEP_MAX_AGE.total_seconds()
+    try:
+        with os.scandir(_cache_dir()) as entries:
+            for entry in entries:
+                if entry.name.endswith(".bin") and entry.stat().st_mtime < cutoff:
+                    os.unlink(entry.path)
+    except OSError as exc:
+        log.debug("image cache sweep failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -770,10 +825,16 @@ class WeatherService:
         on_success: Callable[[Any], None],
         on_error: Callable[[Exception], None] | None = None,
         token: int | None = None,
+        count: int = 1,
     ) -> None:
+        """Fetch a radar view, or with *count* above one, a whole animation.
+
+        The animation is a dozen sequential requests, so a view asks for the
+        latest frame first and paints it, then comes back for the history.
+        """
         self._submit(
             lambda: fetch_radar(
-                location.latitude, location.longitude, width_km, width, height
+                location.latitude, location.longitude, width_km, width, height, count
             ),
             on_success,
             on_error,
@@ -806,7 +867,8 @@ class WeatherService:
 
 #: NOAA's public GeoServer, which serves the national radar mosaics and a
 #: geopolitical boundary layer for context.
-RADAR_BASE = "https://opengeo.ncep.noaa.gov/geoserver/ows"
+RADAR_SERVER = "https://opengeo.ncep.noaa.gov/geoserver"
+RADAR_BASE = f"{RADAR_SERVER}/ows"
 RADAR_BOUNDARY_LAYER = "geopolitical"
 
 #: Reflectivity mosaics by coverage area, as (layer, lon0, lat0, lon1, lat1).
@@ -822,7 +884,18 @@ _RADAR_REGIONS: tuple[tuple[str, float, float, float, float], ...] = (
 
 #: Radar mosaics refresh every few minutes.
 TTL_RADAR = timedelta(minutes=3)
+#: A frame requested at an explicit scan time is immutable, so it may be held
+#: far longer than the live mosaic -- long enough to survive a zoom and come
+#: back, but well inside the sweep that clears the image cache.
+TTL_RADAR_FRAME = timedelta(hours=6)
+TTL_RADAR_TIMES = timedelta(minutes=2)
 TTL_LEGEND = timedelta(days=7)
+
+#: How many frames make up an animation, and how far back the oldest reaches.
+#: The mosaics are published about every two minutes and roughly two hours are
+#: kept, so this samples one frame in every two or three.
+RADAR_FRAME_COUNT = 11
+RADAR_SPAN = timedelta(minutes=50)
 
 #: Web Mercator metres per degree of longitude.
 _MERC_PER_DEGREE = 20037508.34 / 180.0
@@ -851,35 +924,153 @@ def mercator_metres_per_ground_metre(latitude: float) -> float:
 
 
 @dataclass
-class RadarFrame:
-    """One rendered radar view: the base map, the echo layer, and its extent."""
+class RadarEcho:
+    """One reflectivity image and the moment the mosaic was valid.
+
+    ``valid_at`` is ``None`` only when the server's advertised scan times could
+    not be read and the frame was requested without one, which yields whatever
+    the server considers current.
+    """
+
+    reflectivity: bytes
+    valid_at: datetime | None
+
+
+@dataclass
+class RadarSequence:
+    """A radar view: one base map, and the echoes to animate over it.
+
+    Every echo covers the identical extent at the identical size, so the base
+    map is fetched once and painted under whichever echo is showing.
+    """
 
     basemap: bytes
-    reflectivity: bytes
+    #: Oldest first; the last echo is the most recent scan available.
+    echoes: list[RadarEcho]
     width: int
     height: int
     #: Ground width of the view in kilometres, used to draw the scale bar.
     width_km: float
     fetched_at: datetime
 
+    @property
+    def current(self) -> RadarEcho:
+        return self.echoes[-1]
 
-def _radar_request(layers: str, bbox: str, width: int, height: int) -> str:
+
+def _radar_request(
+    layers: str,
+    bbox: str,
+    width: int,
+    height: int,
+    moment: datetime | None = None,
+) -> str:
+    query = {
+        "service": "WMS",
+        "version": "1.3.0",
+        "request": "GetMap",
+        "layers": layers,
+        "styles": "",
+        "crs": "EPSG:3857",
+        "bbox": bbox,
+        "width": str(width),
+        "height": str(height),
+        "format": "image/png",
+        "transparent": "true",
+    }
+    if moment is not None:
+        query["time"] = _wms_time(moment)
+    return f"{RADAR_BASE}?{urllib.parse.urlencode(query)}"
+
+
+def _wms_time(moment: datetime) -> str:
+    """Format a scan time exactly as the capabilities document lists it."""
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _radar_capabilities_url(layer: str) -> str:
+    # Asking the workspace that owns the layer rather than the server root
+    # keeps the document to a few kilobytes instead of several megabytes.
+    workspace = layer.split(":")[0]
     query = urllib.parse.urlencode(
-        {
-            "service": "WMS",
-            "version": "1.3.0",
-            "request": "GetMap",
-            "layers": layers,
-            "styles": "",
-            "crs": "EPSG:3857",
-            "bbox": bbox,
-            "width": str(width),
-            "height": str(height),
-            "format": "image/png",
-            "transparent": "true",
-        }
+        {"service": "WMS", "version": "1.3.0", "request": "GetCapabilities"}
     )
-    return f"{RADAR_BASE}?{query}"
+    return f"{RADAR_SERVER}/{workspace}/ows?{query}"
+
+
+def _parse_scan_times(document: str, layer: str) -> list[datetime]:
+    """Read a layer's advertised ``time`` dimension, oldest first.
+
+    The capabilities document is namespaced, and which namespace depends on
+    the WMS version negotiated, so tags are matched on their local name.
+    """
+    try:
+        root = ElementTree.fromstring(document)
+    except ElementTree.ParseError as exc:
+        raise WeatherError(
+            f"The radar service returned unreadable metadata: {exc}"
+        ) from exc
+
+    short = layer.split(":")[-1]
+    for element in root.iter():
+        if not element.tag.endswith("}Layer") and element.tag != "Layer":
+            continue
+        name = next(
+            (
+                child.text
+                for child in element
+                if child.tag.endswith("Name") and child.text
+            ),
+            None,
+        )
+        if name not in (layer, short):
+            continue
+        for child in element:
+            if child.tag.endswith("Dimension") and child.get("name") == "time":
+                moments = [
+                    parsed
+                    for raw in (child.text or "").split(",")
+                    if (parsed := _parse_time(raw.strip())) is not None
+                ]
+                return sorted(moments)
+    return []
+
+
+def radar_scan_times(layer: str) -> list[datetime]:
+    """The scan times *layer* currently offers, oldest first."""
+    url = _radar_capabilities_url(layer)
+    cached = _cache.get(url, TTL_RADAR_TIMES)
+    if cached is None:
+        moments = _parse_scan_times(fetch_text(url), layer)
+        cached = [moment.isoformat() for moment in moments]
+        _cache.set(url, cached)
+    return [datetime.fromisoformat(raw) for raw in cached]
+
+
+def _sample_scan_times(
+    available: list[datetime], count: int, span: timedelta
+) -> list[datetime]:
+    """Pick *count* scan times ending at the newest, spread evenly over *span*.
+
+    Snapping evenly spaced targets onto whatever the server actually offers,
+    rather than taking every nth entry, keeps the animation running at a
+    steady rate through the gaps that appear when a scan is late or missing.
+    """
+    if not available or count < 1:
+        return []
+    newest = available[-1]
+    if count == 1:
+        return [newest]
+
+    oldest = max(available[0], newest - span)
+    step = (newest - oldest) / (count - 1)
+    chosen: list[datetime] = []
+    for index in range(count):
+        target = oldest + step * index
+        nearest = min(available, key=lambda moment: abs(moment - target))
+        if not chosen or nearest != chosen[-1]:
+            chosen.append(nearest)
+    return chosen
 
 
 def fetch_radar(
@@ -888,13 +1079,19 @@ def fetch_radar(
     width_km: float,
     width: int,
     height: int,
-) -> RadarFrame:
-    """Fetch a radar view centred on a coordinate.
+    count: int = 1,
+) -> RadarSequence:
+    """Fetch *count* radar frames centred on a coordinate, oldest first.
 
     The bounding box is built in Web Mercator with the same aspect ratio as
-    the target image, so nothing is stretched, and both layers are requested
+    the target image, so nothing is stretched, and every layer is requested
     over the identical extent so they overlay exactly.
+
+    A count of one asks only for the latest scan, which is what the view shows
+    while the rest of the animation is still arriving.
     """
+    sweep_binary_cache()
+
     width = max(64, min(1600, int(width)))
     height = max(64, min(1000, int(height)))
 
@@ -906,16 +1103,41 @@ def fetch_radar(
         f"{centre_x + half_width:.1f},{centre_y + half_height:.1f}"
     )
 
+    layer = radar_layer(latitude, longitude)
     basemap = fetch_binary(
         _radar_request(RADAR_BOUNDARY_LAYER, bbox, width, height), TTL_LEGEND
     )
-    reflectivity = fetch_binary(
-        _radar_request(radar_layer(latitude, longitude), bbox, width, height),
-        TTL_RADAR,
-    )
-    return RadarFrame(
+
+    try:
+        moments: list[datetime | None] = list(
+            _sample_scan_times(radar_scan_times(layer), count, RADAR_SPAN)
+        )
+    except WeatherError as exc:
+        # The imagery is still worth showing without its scan times; the view
+        # simply cannot animate or caption the frame it is displaying.
+        log.debug("radar scan times unavailable: %s", exc)
+        moments = []
+    if not moments:
+        moments = [None]
+
+    echoes: list[RadarEcho] = []
+    for moment in moments:
+        url = _radar_request(layer, bbox, width, height, moment)
+        try:
+            payload = fetch_binary(url, TTL_RADAR if moment is None else TTL_RADAR_FRAME)
+        except WeatherError as exc:
+            # One missing frame should shorten the animation, not lose it --
+            # unless it was the only one asked for.
+            log.debug("radar frame %s unavailable: %s", moment, exc)
+            continue
+        echoes.append(RadarEcho(reflectivity=payload, valid_at=moment))
+
+    if not echoes:
+        raise WeatherError("The radar service returned no imagery.")
+
+    return RadarSequence(
         basemap=basemap,
-        reflectivity=reflectivity,
+        echoes=echoes,
         width=width,
         height=height,
         width_km=width_km,
