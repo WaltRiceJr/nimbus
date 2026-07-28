@@ -414,12 +414,11 @@ class DashboardPage(Adw.NavigationPage):
         self._flow.set_max_children_per_line(6)
         self._flow.set_row_spacing(14)
         self._flow.set_column_spacing(14)
-        # Centring makes the box take its natural width, so cards keep their
-        # square proportions instead of being stretched to fill the row.
-        # Aligning to the top stops a short grid from being stretched down
-        # the height of the scroll viewport.
+        # Centring makes the box take its natural size, so cards keep their
+        # square proportions instead of stretching to fill the viewport; the
+        # grid floats in the middle of the sky, scrolling once it outgrows it.
         self._flow.set_halign(Gtk.Align.CENTER)
-        self._flow.set_valign(Gtk.Align.START)
+        self._flow.set_valign(Gtk.Align.CENTER)
         self._flow.add_css_class("dashboard-grid")
 
         clamp.set_child(self._flow)
