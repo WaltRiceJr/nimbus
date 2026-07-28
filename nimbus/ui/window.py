@@ -37,7 +37,9 @@ COMPACT_HEIGHT = 760
 EXPANDED_HEIGHT = 980
 
 #: Pinned locations are re-fetched on this cadence while the app is open.
-AUTO_REFRESH_SECONDS = 15 * 60
+#: The service's disk cache caps the real request rate, so a short timer
+#: mostly picks up whatever has expired -- alerts in particular.
+AUTO_REFRESH_SECONDS = 5 * 60
 
 
 class NimbusWindow(Adw.ApplicationWindow):
