@@ -38,7 +38,8 @@
   border: none;
 }
 
-.hero-header button {
+.hero-header button,
+.hero-header windowtitle {
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
@@ -436,7 +437,8 @@
   box-shadow: 0 1px 0 alpha(currentColor, 0.1);
 }
 
-.hero-header.scrolled button {
+.hero-header.scrolled button,
+.hero-header.scrolled windowtitle {
   color: inherit;
   text-shadow: none;
 }
