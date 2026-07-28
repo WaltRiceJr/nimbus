@@ -104,11 +104,14 @@ class NimbusApplication(Adw.Application):
             application_name="Nimbus",
             application_icon="weather-few-clouds-symbolic",
             version=VERSION,
-            developer_name="Built with GTK4 and libadwaita",
+            developer_name="Walter Rice",
+            copyright="Copyright © 2026 Walter Rice",
             comments=(
-                "Forecasts and observations from the United States "
-                "National Weather Service. Sun and moon positions are "
-                "computed locally."
+                "All weather data is provided by the United States "
+                "National Weather Service. This application is an "
+                "independent project and is not affiliated with or "
+                "endorsed by the National Weather Service or NOAA. "
+                "Sun and moon positions are computed locally."
             ),
             website="https://www.weather.gov",
             license_type=Gtk.License.GPL_3_0,
