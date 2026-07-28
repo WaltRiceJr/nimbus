@@ -26,7 +26,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gio, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gio, GObject, Gtk, Pango  # noqa: E402
 
 from .. import astro
 from ..conditions import display_name
@@ -173,9 +173,31 @@ class LocationCard(Gtk.Overlay):
         gesture.connect("pressed", self._on_right_click)
         self.add_controller(gesture)
 
-    def _on_right_click(self, _gesture, _n, x, y) -> None:
-        from gi.repository import Gdk
+        # Drag to rearrange: the card is both a drag handle and a drop
+        # target; dropping card A on card B gives A B's position.
+        drag = Gtk.DragSource()
+        drag.set_actions(Gdk.DragAction.MOVE)
+        drag.connect("prepare", self._on_drag_prepare)
+        drag.connect("drag-begin", self._on_drag_begin)
+        self._card.add_controller(drag)
 
+        drop = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        drop.connect("drop", self._on_drop)
+        self.add_controller(drop)
+
+    def _on_drag_prepare(self, _source, _x, _y) -> Gdk.ContentProvider:
+        return Gdk.ContentProvider.new_for_value(self.location.key)
+
+    def _on_drag_begin(self, source: Gtk.DragSource, _drag) -> None:
+        source.set_icon(
+            Gtk.WidgetPaintable.new(self._card),
+            CARD_WIDTH // 2, CARD_HEIGHT // 2,
+        )
+
+    def _on_drop(self, _target, value, _x, _y) -> bool:
+        return self._dashboard.reorder_card(str(value), self)
+
+    def _on_right_click(self, _gesture, _n, x, y) -> None:
         self._popover.set_pointing_to(Gdk.Rectangle(x=int(x), y=int(y), width=1, height=1))
         self._popover.popup()
 
@@ -315,6 +337,9 @@ class DashboardPage(Adw.NavigationPage):
         toolbar = Adw.ToolbarView()
 
         header = Adw.HeaderBar()
+        # Same treatment as the city page: the bar floats over the sky.
+        header.add_css_class("flat")
+        header.add_css_class("hero-header")
         title = Adw.WindowTitle(title="NimbUS", subtitle="National Weather Service")
         header.set_title_widget(title)
 
@@ -361,7 +386,19 @@ class DashboardPage(Adw.NavigationPage):
         self._stack.add_named(self._build_results(), "results")
 
         toolbar.set_content(self._stack)
-        self.set_child(toolbar)
+
+        # The live sky backs the whole dashboard, exactly as on a city page;
+        # the first pinned city's weather drives the scene.
+        self._sky = SkyView(Condition.CLEAR)
+        self._sky.set_hexpand(True)
+        self._sky.set_vexpand(True)
+
+        overlay = Gtk.Overlay()
+        overlay.set_child(self._sky)
+        overlay.add_overlay(toolbar)
+        # The sky itself has no minimum size; the content dictates it.
+        overlay.set_measure_overlay(toolbar, True)
+        self.set_child(overlay)
 
     def _build_grid(self) -> Gtk.Widget:
         scroller = Gtk.ScrolledWindow()
@@ -391,6 +428,7 @@ class DashboardPage(Adw.NavigationPage):
 
     def _build_empty(self) -> Gtk.Widget:
         status = Adw.StatusPage()
+        status.add_css_class("dashboard-empty")
         status.set_icon_name("weather-few-clouds-symbolic")
         status.set_title("No pinned locations")
         status.set_description(
@@ -543,9 +581,30 @@ class DashboardPage(Adw.NavigationPage):
         card.apply_bundle(bundle)
         # Persist the resolved grid so later refreshes skip the /points call.
         self.favorites.update(bundle.location)
+        # The first pinned city's weather is the page-wide backdrop.
+        if self._cards and card is self._cards[0]:
+            current = bundle.current
+            self._sky.set_scene(
+                current.condition if current else Condition.UNKNOWN,
+                datetime.now(timezone.utc),
+                bundle.location.latitude,
+                bundle.location.longitude,
+                bundle.location.tz(),
+                wind_mph=current.wind_speed if current else None,
+            )
 
     def move_card(self, card: LocationCard, offset: int) -> None:
         self.favorites.move(card.location, offset)
+
+    def reorder_card(self, source_key: str, target: LocationCard) -> bool:
+        """Drop handler: the dragged card takes the target card's position."""
+        source = self.favorites.find(source_key)
+        if source is None or source.key == target.location.key:
+            return False
+        keys = [item.key for item in self.favorites]
+        offset = keys.index(target.location.key) - keys.index(source.key)
+        self.favorites.move(source, offset)
+        return True
 
     def remove_location(self, location: Location) -> None:
         self.favorites.remove(location)
