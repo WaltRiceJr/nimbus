@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Nimbus
+Name=NimbUS
 GenericName=Weather
 Comment=Weather for the United States, from the National Weather Service
 Exec=@EXEC@

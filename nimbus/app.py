@@ -101,7 +101,7 @@ class NimbusApplication(Adw.Application):
 
     def _on_about(self, *_args) -> None:
         about = Adw.AboutDialog(
-            application_name="Nimbus",
+            application_name="NimbUS",
             application_icon="weather-few-clouds-symbolic",
             version=VERSION,
             developer_name="Walter Rice",

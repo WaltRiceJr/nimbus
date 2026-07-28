@@ -1,7 +1,8 @@
-# Nimbus
+# NimbUS
 
 A weather application for GNOME, built with GTK4 and libadwaita, backed by the
-United States National Weather Service.
+United States National Weather Service — the capitalisation is no accident:
+NimbUS covers US weather.
 
 Every weather symbol and sky scene is drawn as vector art at runtime, so the
 interface renders a live illustration of the actual conditions: the gradient

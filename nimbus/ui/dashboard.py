@@ -296,7 +296,7 @@ class DashboardPage(Adw.NavigationPage):
     """Landing page: a grid of pinned locations and the search interface."""
 
     def __init__(self, window) -> None:
-        super().__init__(title="Nimbus")
+        super().__init__(title="NimbUS")
         self._window = window
         self._cards: list[LocationCard] = []
         self._search_timer = 0
@@ -315,7 +315,7 @@ class DashboardPage(Adw.NavigationPage):
         toolbar = Adw.ToolbarView()
 
         header = Adw.HeaderBar()
-        title = Adw.WindowTitle(title="Nimbus", subtitle="National Weather Service")
+        title = Adw.WindowTitle(title="NimbUS", subtitle="National Weather Service")
         header.set_title_widget(title)
 
         refresh = Gtk.Button.new_from_icon_name("view-refresh-symbolic")
@@ -324,7 +324,7 @@ class DashboardPage(Adw.NavigationPage):
         header.pack_end(refresh)
 
         menu = Gio.Menu()
-        menu.append("About Nimbus", "app.about")
+        menu.append("About NimbUS", "app.about")
         menu.append("Quit", "app.quit")
         menu_button = Gtk.MenuButton()
         menu_button.set_icon_name("open-menu-symbolic")

@@ -47,7 +47,8 @@ class NimbusWindow(Adw.ApplicationWindow):
 
     def __init__(self, application: Adw.Application) -> None:
         super().__init__(application=application)
-        self.set_title("Nimbus")
+        # Capitalised NimbUS: the app is specifically about US weather.
+        self.set_title("NimbUS")
         self.set_default_size(1080, COMPACT_HEIGHT)
 
         self.favorites = FavoritesStore()
