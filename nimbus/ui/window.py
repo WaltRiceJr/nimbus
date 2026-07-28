@@ -65,7 +65,6 @@ class NimbusWindow(Adw.ApplicationWindow):
 
         self.connect("close-request", self._on_close)
         self._dashboard.reload()
-        self._restore_last_view()
         self._start_auto_refresh()
 
     # -- navigation -------------------------------------------------------
@@ -88,7 +87,6 @@ class NimbusWindow(Adw.ApplicationWindow):
             self._navigation.pop_to_tag(location.key)
         else:
             self._navigation.push(page)
-        self.favorites.set_last_viewed(location)
 
         if bundle is not None:
             page.apply_bundle(bundle)
@@ -124,19 +122,6 @@ class NimbusWindow(Adw.ApplicationWindow):
             self._dashboard.reload()
 
     # -- lifecycle --------------------------------------------------------
-
-    def _restore_last_view(self) -> None:
-        key = self.favorites.last_viewed
-        if not key:
-            return
-        location = self.favorites.find(key)
-        if location is not None:
-            # Defer so the dashboard is fully realised underneath first.
-            GLib.idle_add(self._push_restored, location)
-
-    def _push_restored(self, location: Location) -> bool:
-        self.open_location(location)
-        return GLib.SOURCE_REMOVE
 
     def _start_auto_refresh(self) -> None:
         self._refresh_source = GLib.timeout_add_seconds(

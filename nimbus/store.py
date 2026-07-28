@@ -58,7 +58,6 @@ class FavoritesStore(GObject.Object):
         super().__init__()
         self._path = os.path.join(_config_dir(), "favorites.json")
         self._locations: list[Location] = []
-        self._last_viewed: str = ""
         self.load()
 
     # -- access -----------------------------------------------------------
@@ -66,10 +65,6 @@ class FavoritesStore(GObject.Object):
     @property
     def locations(self) -> list[Location]:
         return list(self._locations)
-
-    @property
-    def last_viewed(self) -> str:
-        return self._last_viewed
 
     def __len__(self) -> int:
         return len(self._locations)
@@ -139,12 +134,6 @@ class FavoritesStore(GObject.Object):
                     self.emit("changed")
                 return
 
-    def set_last_viewed(self, location: Location | None) -> None:
-        key = location.key if location else ""
-        if key != self._last_viewed:
-            self._last_viewed = key
-            self.save()
-
     # -- disk -------------------------------------------------------------
 
     def load(self) -> None:
@@ -173,13 +162,11 @@ class FavoritesStore(GObject.Object):
             except (TypeError, ValueError, KeyError, AttributeError):
                 log.warning("skipping malformed favourite: %r", entry)
         self._locations = loaded
-        self._last_viewed = payload.get("last_viewed", "")
 
     def save(self) -> None:
         payload = {
             "version": 1,
             "locations": [item.to_dict() for item in self._locations],
-            "last_viewed": self._last_viewed,
         }
         try:
             tmp = f"{self._path}.tmp"
