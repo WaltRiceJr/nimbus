@@ -35,7 +35,7 @@ full report:
 **Search and favourites.** A search box sits permanently above the grid: look
 up any US city, town or ZIP code, then pin it.
 Pinned locations persist between runs, can be reordered, and refresh
-automatically every 15 minutes.
+automatically every 5 minutes.
 
 **Alerts.** Active NWS watches, warnings and advisories appear above the
 forecast, coloured by severity, and expand to the full text.
