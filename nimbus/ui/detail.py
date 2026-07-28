@@ -401,13 +401,20 @@ class LocationPage(Adw.NavigationPage):
 
         toolbar.add_top_bar(header)
 
+        # The sky backs the entire page: it sits beneath the scroller, so
+        # the cards drift over the current weather rather than a flat theme
+        # background.
+        self._sky = SkyView(Condition.CLEAR)
+        self._sky.set_hexpand(True)
+        self._sky.set_vexpand(True)
+
         self._scroller = Gtk.ScrolledWindow()
         self._scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self._scroller.set_vexpand(True)
 
         column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         column.append(self._build_hero())
-        # The sky runs edge to edge; the cards below keep a readable measure.
+        # The sky runs edge to edge; the cards keep a readable measure.
         clamp = Adw.Clamp()
         clamp.set_maximum_size(BODY_MAX_WIDTH)
         clamp.set_tightening_threshold(BODY_MAX_WIDTH)
@@ -420,7 +427,13 @@ class LocationPage(Adw.NavigationPage):
         self._scroller.get_vadjustment().connect("value-changed", self._on_scrolled)
 
         toolbar.set_content(self._scroller)
-        self.set_child(toolbar)
+
+        overlay = Gtk.Overlay()
+        overlay.set_child(self._sky)
+        overlay.add_overlay(toolbar)
+        # The sky itself has no minimum size; the content dictates it.
+        overlay.set_measure_overlay(toolbar, True)
+        self.set_child(overlay)
 
     def _on_scrolled(self, adjustment: Gtk.Adjustment) -> None:
         past_hero = adjustment.get_value() > HERO_HEIGHT - 78
@@ -434,15 +447,13 @@ class LocationPage(Adw.NavigationPage):
             self._header.add_css_class("flat")
 
     def _build_hero(self) -> Gtk.Widget:
-        overlay = Gtk.Overlay()
-        overlay.add_css_class("hero")
-
-        self._sky = SkyView(Condition.CLEAR)
-        self._sky.set_size_request(-1, HERO_HEIGHT)
-        overlay.set_child(self._sky)
+        # Only the text block: the sky behind it is the page-wide backdrop.
+        wrapper = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        wrapper.set_size_request(-1, HERO_HEIGHT)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         content.set_valign(Gtk.Align.CENTER)
+        content.set_vexpand(True)
         content.add_css_class("hero-content")
 
         self._place_label = Gtk.Label(label=self._location.label)
@@ -469,8 +480,8 @@ class LocationPage(Adw.NavigationPage):
         self._detail_label.add_css_class("hero-detail")
         content.append(self._detail_label)
 
-        overlay.add_overlay(content)
-        return overlay
+        wrapper.append(content)
+        return wrapper
 
     def _build_body(self) -> Gtk.Widget:
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
