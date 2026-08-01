@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Flatpak manifest. Build and install locally with:
+#
+#   flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
+#   flatpak-builder --user --install --force-clean build/flatpak \
+#       packaging/org.nimbus.Weather.yml
+#
+# Or produce a distributable single-file bundle:
+#
+#   flatpak-builder --repo=build/repo --force-clean build/flatpak \
+#       packaging/org.nimbus.Weather.yml
+#   flatpak build-bundle build/repo dist/nimbus-weather.flatpak org.nimbus.Weather
+
+app-id: org.nimbus.Weather
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: nimbus-weather
+
+finish-args:
+  # Forecasts, radar and satellite imagery all come over the network.
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+
+modules:
+  - name: nimbus
+    buildsystem: simple
+    build-commands:
+      # The GNOME runtime ships Python, PyGObject and pycairo; the app is
+      # copied verbatim and found through the launcher's PYTHONPATH, which
+      # keeps the build independent of the runtime's Python version.
+      - mkdir -p /app/lib/nimbus-weather
+      - cp -r nimbus /app/lib/nimbus-weather/
+      - install -Dm0755 packaging/flatpak-launcher.sh /app/bin/nimbus-weather
+      - sed 's|@EXEC@|nimbus-weather|' data/org.nimbus.Weather.desktop.in
+        > org.nimbus.Weather.desktop
+      - install -Dm0644 org.nimbus.Weather.desktop
+        /app/share/applications/org.nimbus.Weather.desktop
+      - install -Dm0644 data/org.nimbus.Weather.metainfo.xml
+        /app/share/metainfo/org.nimbus.Weather.metainfo.xml
+      - for size in 16 24 32 48 64 128 256 512; do
+        install -Dm0644 data/icons/nimbus-${size}.png
+        /app/share/icons/hicolor/${size}x${size}/apps/org.nimbus.Weather.png;
+        done
+    sources:
+      - type: dir
+        path: ..

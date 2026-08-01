@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nimbus-weather"
+description = "Weather for the United States, from the National Weather Service"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Walter Rice" }]
+requires-python = ">=3.11"
+keywords = ["weather", "forecast", "NWS", "GNOME", "GTK"]
+classifiers = [
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+# PyGObject and pycairo bind the system GTK stack, so distribution packages
+# depend on the distro's python3-gobject/python3-cairo instead; these matter
+# only when installing with pip.
+dependencies = ["PyGObject>=3.46", "pycairo>=1.24"]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/WaltRiceJr/nimbus"
+Issues = "https://github.com/WaltRiceJr/nimbus/issues"
+
+[project.gui-scripts]
+nimbus-weather = "nimbus.app:main"
+
+[tool.setuptools]
+packages = ["nimbus", "nimbus.ui"]
+
+[tool.setuptools.package-data]
+"nimbus.ui" = ["style.css"]
+
+[tool.setuptools.dynamic]
+version = { attr = "nimbus.__version__" }

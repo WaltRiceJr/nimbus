@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# On every v* tag: build the Python sdist/wheel, an RPM, a .deb and a
+# Flatpak bundle, then publish them all as a GitHub release.
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  python:
+    name: sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python
+          path: dist/*
+
+  rpm:
+    name: RPM
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Install build tools
+        run: >
+          dnf install -y git rpm-build python3-devel pyproject-rpm-macros
+          python3-setuptools python3-pip python3-wheel desktop-file-utils
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash packaging/build-rpm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: dist/*.rpm
+
+  deb:
+    name: Debian package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash packaging/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/*.deb
+
+  flatpak:
+    name: Flatpak bundle
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/org.nimbus.Weather.yml
+          bundle: nimbus-weather.flatpak
+          upload-artifact: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: nimbus-weather.flatpak
+
+  release:
+    name: Publish release
+    needs: [python, rpm, deb, flatpak]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
