@@ -826,6 +826,7 @@ class WeatherService:
         on_error: Callable[[Exception], None] | None = None,
         token: int | None = None,
         count: int = 1,
+        include_clouds: bool = False,
     ) -> None:
         """Fetch a radar view, or with *count* above one, a whole animation.
 
@@ -834,7 +835,8 @@ class WeatherService:
         """
         self._submit(
             lambda: fetch_radar(
-                location.latitude, location.longitude, width_km, width, height, count
+                location.latitude, location.longitude, width_km, width, height,
+                count, include_clouds,
             ),
             on_success,
             on_error,
@@ -882,6 +884,18 @@ _RADAR_REGIONS: tuple[tuple[str, float, float, float, float], ...] = (
     ("conus:conus_bref_qcd", -127.5, 21.5, -64.5, 51.5),
 )
 
+#: NOAA's nowCOAST GeoServer, which serves the GOES East/West satellite
+#: composites. Same WMS dialect and projection as the radar server, so its
+#: imagery can be requested over the identical extent and overlaid exactly.
+CLOUDS_SERVER = "https://nowcoast.noaa.gov/geoserver"
+CLOUDS_BASE = f"{CLOUDS_SERVER}/ows"
+#: Longwave infrared: the one channel that shows cloud day and night.
+CLOUDS_LAYER = "satellite:goes_longwave_imagery"
+
+#: The GOES East/West composite's advertised coverage, as lon0, lat0, lon1,
+#: lat1. Most of Alaska and all of Guam fall outside it.
+_CLOUDS_EXTENT = (-179.5, 10.9, -50.75, 50.56)
+
 #: Radar mosaics refresh every few minutes.
 TTL_RADAR = timedelta(minutes=3)
 #: A frame requested at an explicit scan time is immutable, so it may be held
@@ -909,6 +923,12 @@ def radar_layer(latitude: float, longitude: float) -> str:
     return _RADAR_REGIONS[-1][0]
 
 
+def clouds_available(latitude: float, longitude: float) -> bool:
+    """Whether the GOES satellite composite covers a coordinate."""
+    lon0, lat0, lon1, lat1 = _CLOUDS_EXTENT
+    return lon0 <= longitude <= lon1 and lat0 <= latitude <= lat1
+
+
 def _to_mercator(longitude: float, latitude: float) -> tuple[float, float]:
     latitude = max(-85.05, min(85.05, latitude))
     x = longitude * _MERC_PER_DEGREE
@@ -934,6 +954,9 @@ class RadarEcho:
 
     reflectivity: bytes
     valid_at: datetime | None
+    #: The GOES infrared frame nearest this scan, when clouds were asked for
+    #: and the satellite composite covers the view.
+    clouds: bytes | None = None
 
 
 @dataclass
@@ -964,6 +987,7 @@ def _radar_request(
     width: int,
     height: int,
     moment: datetime | None = None,
+    base: str = RADAR_BASE,
 ) -> str:
     query = {
         "service": "WMS",
@@ -980,7 +1004,7 @@ def _radar_request(
     }
     if moment is not None:
         query["time"] = _wms_time(moment)
-    return f"{RADAR_BASE}?{urllib.parse.urlencode(query)}"
+    return f"{base}?{urllib.parse.urlencode(query)}"
 
 
 def _wms_time(moment: datetime) -> str:
@@ -988,14 +1012,14 @@ def _wms_time(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def _radar_capabilities_url(layer: str) -> str:
+def _radar_capabilities_url(layer: str, server: str = RADAR_SERVER) -> str:
     # Asking the workspace that owns the layer rather than the server root
     # keeps the document to a few kilobytes instead of several megabytes.
     workspace = layer.split(":")[0]
     query = urllib.parse.urlencode(
         {"service": "WMS", "version": "1.3.0", "request": "GetCapabilities"}
     )
-    return f"{RADAR_SERVER}/{workspace}/ows?{query}"
+    return f"{server}/{workspace}/ows?{query}"
 
 
 def _parse_scan_times(document: str, layer: str) -> list[datetime]:
@@ -1036,9 +1060,9 @@ def _parse_scan_times(document: str, layer: str) -> list[datetime]:
     return []
 
 
-def radar_scan_times(layer: str) -> list[datetime]:
+def radar_scan_times(layer: str, server: str = RADAR_SERVER) -> list[datetime]:
     """The scan times *layer* currently offers, oldest first."""
-    url = _radar_capabilities_url(layer)
+    url = _radar_capabilities_url(layer, server)
     cached = _cache.get(url, TTL_RADAR_TIMES)
     if cached is None:
         moments = _parse_scan_times(fetch_text(url), layer)
@@ -1080,6 +1104,7 @@ def fetch_radar(
     width: int,
     height: int,
     count: int = 1,
+    include_clouds: bool = False,
 ) -> RadarSequence:
     """Fetch *count* radar frames centred on a coordinate, oldest first.
 
@@ -1089,6 +1114,9 @@ def fetch_radar(
 
     A count of one asks only for the latest scan, which is what the view shows
     while the rest of the animation is still arriving.
+
+    With *include_clouds*, each frame also carries the GOES infrared image
+    nearest its scan time, when the satellite composite covers the view.
     """
     sweep_binary_cache()
 
@@ -1135,6 +1163,9 @@ def fetch_radar(
     if not echoes:
         raise WeatherError("The radar service returned no imagery.")
 
+    if include_clouds and clouds_available(latitude, longitude):
+        _attach_clouds(echoes, bbox, width, height)
+
     return RadarSequence(
         basemap=basemap,
         echoes=echoes,
@@ -1143,6 +1174,41 @@ def fetch_radar(
         width_km=width_km,
         fetched_at=datetime.now(timezone.utc),
     )
+
+
+def _attach_clouds(
+    echoes: list[RadarEcho], bbox: str, width: int, height: int
+) -> None:
+    """Pair each echo with the GOES infrared frame nearest its scan time.
+
+    Clouds are garnish on the radar view: any frame that cannot be fetched is
+    simply left bare rather than failing the sequence. GOES publishes about
+    every five minutes against the mosaics' two, so the worst mismatch
+    between an echo and its clouds is around two and a half minutes.
+    """
+    try:
+        available = radar_scan_times(CLOUDS_LAYER, server=CLOUDS_SERVER)
+    except WeatherError as exc:
+        log.debug("cloud scan times unavailable: %s", exc)
+        available = []
+
+    for echo in echoes:
+        moment: datetime | None = None
+        if echo.valid_at is not None:
+            if not available:
+                # Without advertised times, an untimed request would put the
+                # current clouds under a past scan; better none at all.
+                continue
+            moment = min(available, key=lambda m: abs(m - echo.valid_at))
+        url = _radar_request(
+            CLOUDS_LAYER, bbox, width, height, moment, base=CLOUDS_BASE
+        )
+        try:
+            echo.clouds = fetch_binary(
+                url, TTL_RADAR if moment is None else TTL_RADAR_FRAME
+            )
+        except WeatherError as exc:
+            log.debug("cloud frame %s unavailable: %s", moment, exc)
 
 
 def fetch_radar_legend() -> bytes:

@@ -24,6 +24,11 @@ overlay exactly. The boundary layer ships as dark lines on transparency,
 which would vanish against a dark card, so it is used as a mask and painted
 in a colour chosen to suit the current theme rather than drawn as-is.
 
+A toggle adds a third layer from nowCOAST, GOES infrared satellite imagery,
+painted beneath the boundaries and echoes. The frames arrive as opaque
+grayscale, so each is contrast-steepened and screened onto the map, turning
+cloud tops into a soft white wash that leaves the dark ground alone.
+
 The mosaic layers are time-enabled, so the last hour of scans can be fetched
 and played as a loop. The current scan is the one worth reading, so the loop
 rests on it, then returns to the beginning and runs forward again.
@@ -46,7 +51,7 @@ from gi.repository import Adw, GLib, Graphene, Gtk  # noqa: E402
 
 from ..conditions import RGB, mix
 from ..model import Location
-from ..nws import RADAR_FRAME_COUNT
+from ..nws import RADAR_FRAME_COUNT, clouds_available
 from .charts import _draw_text, _layout, _readable_on
 
 log = logging.getLogger(__name__)
@@ -85,9 +90,13 @@ class RadarMap(Gtk.Widget):
 
         self._basemap: cairo.ImageSurface | None = None
         self._legend: cairo.ImageSurface | None = None
+        self._show_clouds = True
 
-        #: Decoded echoes as (image, scan time), oldest first.
-        self._echoes: list[tuple[cairo.ImageSurface, datetime | None]] = []
+        #: Decoded echoes as (image, cloud veil or None, scan time),
+        #: oldest first.
+        self._echoes: list[
+            tuple[cairo.ImageSurface, cairo.ImageSurface | None, datetime | None]
+        ] = []
         self._index = 0
         self._anim_source = 0
 
@@ -151,7 +160,8 @@ class RadarMap(Gtk.Widget):
             self.queue_draw()
 
         self._service.load_radar(
-            self._location, self.width_km, width, height, apply_current, failed
+            self._location, self.width_km, width, height, apply_current, failed,
+            include_clouds=self._show_clouds,
         )
 
         if self._legend is None:
@@ -203,12 +213,30 @@ class RadarMap(Gtk.Widget):
             apply_loop,
             failed,
             count=RADAR_FRAME_COUNT,
+            include_clouds=self._show_clouds,
         )
+
+    def set_show_clouds(self, show: bool) -> None:
+        """Turn the satellite cloud layer on or off.
+
+        A sequence fetched without clouds has no imagery to reveal, so
+        turning the layer on refetches -- the radar frames come straight
+        back from the disk cache, and only the satellite images are new
+        requests. Turning it off is just a repaint.
+        """
+        if show == self._show_clouds:
+            return
+        self._show_clouds = show
+        has_clouds = any(veil is not None for _, veil, _ in self._echoes)
+        if show and not has_clouds:
+            self.refresh()
+        else:
+            self.queue_draw()
 
     def _adopt(self, sequence) -> None:
         """Show a freshly fetched sequence, resting on its current scan."""
         echoes = [
-            (image, echo.valid_at)
+            (image, _cloud_veil(echo.clouds), echo.valid_at)
             for echo in sequence.echoes
             if (image := _surface(echo.reflectivity)) is not None
         ]
@@ -325,6 +353,13 @@ class RadarMap(Gtk.Widget):
         # Both layers were rendered at the size requested last time; if the
         # widget has since changed size, scale them to fit until the debounced
         # refetch lands.
+        if self._show_clouds and self._echoes:
+            veil = self._echoes[self._index][1]
+            if veil is not None:
+                # Screened, so the veil only ever brightens: cloud tops rise
+                # out of the map as a soft white wash and the clear ground,
+                # pushed near black by _cloud_veil, leaves it untouched.
+                self._paint_layer(cr, veil, width, height, alpha=0.8, screen=True)
         if self._basemap is not None:
             self._paint_layer(cr, self._basemap, width, height, mask_color=lines)
         if self._echoes:
@@ -360,6 +395,7 @@ class RadarMap(Gtk.Widget):
         height: int,
         mask_color: RGB | None = None,
         alpha: float = 1.0,
+        screen: bool = False,
     ) -> None:
         source_w, source_h = surface.get_width(), surface.get_height()
         if source_w <= 0 or source_h <= 0:
@@ -374,6 +410,8 @@ class RadarMap(Gtk.Widget):
             cr.set_source_rgba(*mask_color, alpha)
             cr.mask_surface(surface, 0, 0)
         else:
+            if screen:
+                cr.set_operator(cairo.OPERATOR_SCREEN)
             cr.set_source_surface(surface, 0, 0)
             cr.paint_with_alpha(alpha)
         cr.restore()
@@ -429,7 +467,16 @@ class RadarMap(Gtk.Widget):
         )
 
     def _draw_caption(self, cr, width: int, height: int, fg: RGB) -> None:
-        parts = ["NOAA base reflectivity"]
+        showing_clouds = (
+            self._show_clouds
+            and self._echoes
+            and self._echoes[self._index][1] is not None
+        )
+        parts = [
+            "NOAA reflectivity + GOES clouds"
+            if showing_clouds
+            else "NOAA base reflectivity"
+        ]
 
         moment = self._frame_time()
         if moment is not None:
@@ -437,7 +484,7 @@ class RadarMap(Gtk.Widget):
 
         # On any frame but the last, say how far back it is, so a time from
         # forty minutes ago cannot be mistaken for the current picture.
-        newest = self._echoes[-1][1] if self._echoes else None
+        newest = self._echoes[-1][2] if self._echoes else None
         if moment is not None and newest is not None and newest != moment:
             behind = (newest - moment).total_seconds() / 60.0
             parts.append(f"\N{MINUS SIGN}{behind:.0f} min")
@@ -454,7 +501,7 @@ class RadarMap(Gtk.Widget):
     def _frame_time(self) -> datetime | None:
         """When the scan on screen was valid, however well that is known."""
         if self._echoes:
-            valid_at = self._echoes[self._index][1]
+            valid_at = self._echoes[self._index][2]
             if valid_at is not None:
                 return valid_at
         return self._fetched_at
@@ -510,6 +557,32 @@ def _surface(payload: bytes) -> cairo.ImageSurface | None:
         return None
 
 
+def _cloud_veil(payload: bytes | None) -> cairo.ImageSurface | None:
+    """Decode a GOES infrared frame and steepen its contrast curve.
+
+    The imagery is opaque grayscale: warm ground sits in the middle greys
+    and cold cloud tops near white. Multiplying the image by itself squares
+    every channel, which pushes the ground toward black while barely dimming
+    the clouds -- so painted through OPERATOR_SCREEN over the map, only the
+    cloud shows.
+    """
+    if payload is None:
+        return None
+    raw = _surface(payload)
+    if raw is None:
+        return None
+    veil = cairo.ImageSurface(
+        cairo.FORMAT_ARGB32, raw.get_width(), raw.get_height()
+    )
+    cr = cairo.Context(veil)
+    cr.set_source_surface(raw, 0, 0)
+    cr.paint()
+    cr.set_operator(cairo.OPERATOR_MULTIPLY)
+    cr.set_source_surface(raw, 0, 0)
+    cr.paint()
+    return veil
+
+
 class RadarCard(Gtk.Box):
     """The radar map plus its heading and zoom controls."""
 
@@ -523,6 +596,18 @@ class RadarCard(Gtk.Box):
         title.add_css_class("section-title")
         title.set_hexpand(True)
         header.append(title)
+
+        self._clouds = Gtk.ToggleButton(label="Clouds")
+        # On by default, and set before the handler is connected: the map is
+        # not built yet, and its own default already matches.
+        self._clouds.set_active(True)
+        self._clouds.add_css_class("flat")
+        self._clouds.add_css_class("radar-clouds")
+        self._clouds.set_tooltip_text("Show satellite cloud cover")
+        self._clouds.connect(
+            "toggled", lambda button: self.map.set_show_clouds(button.get_active())
+        )
+        header.append(self._clouds)
 
         self._range_label = Gtk.Label()
         self._range_label.add_css_class("radar-range")
@@ -549,6 +634,15 @@ class RadarCard(Gtk.Box):
         self._sync()
 
     def configure(self, service, location: Location) -> None:
+        covered = clouds_available(location.latitude, location.longitude)
+        if not covered and self._clouds.get_active():
+            self._clouds.set_active(False)  # updates the map via "toggled"
+        self._clouds.set_sensitive(covered)
+        self._clouds.set_tooltip_text(
+            "Show satellite cloud cover"
+            if covered
+            else "Satellite imagery does not cover this area"
+        )
         self.map.configure(service, location)
         self._sync()
 

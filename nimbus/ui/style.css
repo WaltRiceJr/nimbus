@@ -488,3 +488,28 @@
   opacity: 0.6;
   margin-right: 4px;
 }
+
+/* Reads as a control, not a heading: an outlined pill that fills with the
+   accent colour while the cloud layer is on. */
+.radar-clouds {
+  font-size: 11.5px;
+  font-weight: 600;
+  min-height: 0;
+  padding: 2px 12px;
+  border-radius: 999px;
+  border: 1px solid alpha(currentColor, 0.3);
+}
+
+.radar-clouds:hover {
+  background-color: alpha(currentColor, 0.08);
+}
+
+.radar-clouds:checked {
+  background-color: alpha(var(--accent-bg-color, @accent_bg_color), 0.9);
+  border-color: transparent;
+  color: var(--accent-fg-color, @accent_fg_color);
+}
+
+.radar-clouds:disabled {
+  opacity: 0.4;
+}
