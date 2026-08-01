@@ -519,7 +519,8 @@ class LocationPage(Adw.NavigationPage):
         # the shortest column, so this order reads top-to-bottom when narrow
         # and keeps the important cards high when wide.
         self._tiles: dict[str, StatTile] = {}
-        flow = ColumnFlow()
+        self._flow = ColumnFlow()
+        flow = self._flow
         flow.append(self._build_today_card())
         flow.append(self._build_radar_card())
         flow.append(self._build_week_card())
@@ -727,6 +728,14 @@ class LocationPage(Adw.NavigationPage):
 
         self._place_label.set_label(bundle.location.label)
         self._hero_icon.set_weather(condition, sun.is_daytime, moon.phase)
+
+        # After dark the sky behind the details panel goes deep blue; cards
+        # that stayed frosted-light would glare against it, so the whole
+        # panel takes a dark dress regardless of the application theme.
+        if sun.is_daytime:
+            self._flow.remove_css_class("night-panel")
+        else:
+            self._flow.add_css_class("night-panel")
 
         if current:
             self._temp_label.set_label(_fmt_temp(current.temperature))

@@ -108,6 +108,15 @@
   margin-bottom: 4px;
 }
 
+/* After dark the details panel dresses its cards in a deep blue-grey cut
+   from the same cloth as the night sky and the hourly strip's night end,
+   whatever the application theme. The cairo-drawn charts inside follow
+   suit through _theme_colors, which treats the panel as dark. */
+.night-panel .card-panel {
+  background-color: alpha(#121623, 0.82);
+  color: #e8ecf4;
+}
+
 /* The hourly card carries no padding of its own: the strip paints its
    background, heading and dates edge to edge inside it. The strip's
    background is opaque, so the frosted border the other cards wear would

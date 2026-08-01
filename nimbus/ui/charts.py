@@ -62,14 +62,26 @@ HOURLY_HEIGHT_DRY = 164 + HEADER_BAND + SCROLLBAR_BAND
 PRECIP_FLOOR = 5.0
 
 
-def _theme_colors(_widget: Gtk.Widget) -> tuple[RGB, RGB, RGB]:
+def _in_night_panel(widget: Gtk.Widget) -> bool:
+    """Whether *widget* sits inside a panel dressed dark for the night."""
+    node: Gtk.Widget | None = widget
+    while node is not None:
+        if node.has_css_class("night-panel"):
+            return True
+        node = node.get_parent()
+    return False
+
+
+def _theme_colors(widget: Gtk.Widget) -> tuple[RGB, RGB, RGB]:
     """Foreground, dimmed foreground and accent for the active theme.
 
     Read from libadwaita rather than GtkStyleContext, which is deprecated and
     reports the wrong colour for widgets that have not been realised yet.
+    A widget inside a night-dressed panel draws dark regardless of theme,
+    matching the CSS that darkens the cards around it.
     """
     manager = Adw.StyleManager.get_default()
-    dark = manager.get_dark()
+    dark = manager.get_dark() or _in_night_panel(widget)
 
     fg: RGB = (0.94, 0.95, 0.96) if dark else (0.11, 0.12, 0.14)
     dim: RGB = (0.66, 0.69, 0.74) if dark else (0.42, 0.45, 0.50)
