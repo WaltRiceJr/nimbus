@@ -2,7 +2,7 @@
 Type=Application
 Name=NimbUS
 GenericName=Weather
-Comment=Weather for the United States, from the National Weather Service
+Comment=Weather for the United States, using National Weather Service data
 Exec=@EXEC@
 Icon=org.nimbus.Weather
 Terminal=false

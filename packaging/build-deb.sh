@@ -59,13 +59,16 @@ Maintainer: Walter Rice <waltricejr@gmail.com>
 Installed-Size: ${INSTALLED_SIZE}
 Depends: python3 (>= 3.11), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, gir1.2-adw-1
 Homepage: https://github.com/WaltRiceJr/nimbus
-Description: Weather for the United States, from the National Weather Service
+Description: Weather for the United States, using National Weather Service data
  A weather application for GNOME. Every weather symbol and sky scene is
  drawn as vector art at runtime: the sky gradient follows the sun's real
  altitude, the moon is shown at its true phase, and rain, snow, fog and
  lightning animate over drifting cloud layers. Includes a 48-hour forecast
  strip, a 7-day outlook, animated radar with satellite cloud cover, and
  NWS watches and warnings.
+ .
+ An independent project, not affiliated with or endorsed by the National
+ Weather Service or NOAA.
 CONTROL
 
 dpkg-deb --build --root-owner-group "$STAGE" dist/

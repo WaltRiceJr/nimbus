@@ -3,7 +3,7 @@
 Name:           nimbus-weather
 Version:        1.0.0
 Release:        1%{?dist}
-Summary:        Weather for the United States, from the National Weather Service
+Summary:        Weather for the United States, using National Weather Service data
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/WaltRiceJr/nimbus
@@ -20,12 +20,16 @@ Requires:       gtk4
 Requires:       libadwaita
 
 %description
-A weather application for GNOME, backed by the United States National
-Weather Service. Every weather symbol and sky scene is drawn as vector art
-at runtime: the sky gradient follows the sun's real altitude, the moon is
-shown at its true phase, and rain, snow, fog and lightning animate over
-drifting cloud layers. Includes a 48-hour forecast strip, a 7-day outlook,
-animated radar with satellite cloud cover, and NWS watches and warnings.
+A weather application for GNOME, showing forecasts, radar and alerts from
+United States National Weather Service data. Every weather symbol and sky
+scene is drawn as vector art at runtime: the sky gradient follows the sun's
+real altitude, the moon is shown at its true phase, and rain, snow, fog and
+lightning animate over drifting cloud layers. Includes a 48-hour forecast
+strip, a 7-day outlook, animated radar with satellite cloud cover, and NWS
+watches and warnings.
+
+An independent project, not affiliated with or endorsed by the National
+Weather Service or NOAA.
 
 %prep
 %autosetup -n nimbus-%{version}

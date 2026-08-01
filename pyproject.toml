@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nimbus-weather"
-description = "Weather for the United States, from the National Weather Service"
+description = "Weather for the United States, using National Weather Service data (unaffiliated)"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
 authors = [{ name = "Walter Rice" }]

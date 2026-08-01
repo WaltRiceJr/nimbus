@@ -16,6 +16,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Nimbus -- a weather application for GNOME backed by the National Weather Service."""
+"""Nimbus -- a weather application for GNOME, using National Weather Service data.
+
+An independent project, not affiliated with or endorsed by the NWS or NOAA.
+"""
 
 __version__ = "1.0.0"

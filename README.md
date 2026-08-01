@@ -1,8 +1,12 @@
 # NimbUS
 
-A weather application for GNOME, built with GTK4 and libadwaita, backed by the
-United States National Weather Service — the capitalisation is no accident:
-NimbUS covers US weather.
+A weather application for GNOME, built with GTK4 and libadwaita, showing
+forecasts, radar and alerts from United States National Weather Service data —
+the capitalisation is no accident: NimbUS covers US weather.
+
+NimbUS is an independent project. It is not affiliated with, sponsored by,
+approved by, or endorsed by the National Weather Service, NOAA, or any
+government agency; they are the source of the (public domain) data only.
 
 Every weather symbol and sky scene is drawn as vector art at runtime, so the
 interface renders a live illustration of the actual conditions: the gradient
@@ -129,7 +133,9 @@ release. Without `--push` it stops after tagging so you can review first.
 
 Forecasts, observations and alerts come from the National Weather Service API
 at `api.weather.gov`, which is public domain and requires no API key. It covers
-the United States and its territories only.
+the United States and its territories only. NimbUS consumes these services as
+any member of the public may; nothing about the project is affiliated with,
+sponsored by, or endorsed by the NWS or NOAA.
 
 Radar reflectivity is the MRMS mosaic from NOAA's GeoServer at
 `opengeo.ncep.noaa.gov`; satellite cloud cover is the GOES East/West infrared
