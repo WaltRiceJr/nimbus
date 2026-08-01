@@ -10,6 +10,8 @@ follows the sun's real altitude, stars appear as twilight deepens, the moon is
 shown at its true phase, and rain, snow, fog and lightning animate over
 drifting cloud layers.
 
+![The dashboard: every pinned location over its own live sky](data/screenshots/dashboard.png)
+
 ## Features
 
 **Dashboard.** Every pinned location as a card showing live conditions over its
@@ -25,12 +27,19 @@ through a twilight. One toggle expands it into the
 full report:
 
 - today's and tonight's forecast narrative from the local forecast office
+- animated radar with NOAA reflectivity and GOES satellite cloud cover
 - a 7-day forecast whose range bars share one temperature scale, so the week
   reads as a single chart
 - sunrise, sunset, civil dawn and dusk, day length and solar noon
 - moonrise, moonset, and the moon phase drawn at its true illumination
 - feels-like, humidity, dew point, wind, pressure, visibility, and the
   reporting station
+
+After dark, the whole report dresses itself to match the night sky.
+
+![A location page: the live sky and the 48-hour strip](data/screenshots/location.png)
+
+![The expanded report at night: 7-day outlook, radar, sun, moon and conditions](data/screenshots/details.png)
 
 **Search and favourites.** A search box sits permanently above the grid: look
 up any US city, town or ZIP code, then pin it.
@@ -40,11 +49,28 @@ automatically every 5 minutes.
 **Alerts.** Active NWS watches, warnings and advisories appear above the
 forecast, coloured by severity, and expand to the full text.
 
-## Requirements
+## Installing
 
-- Python 3.11 or newer
-- GTK 4.10+ and libadwaita 1.4+ with their GObject introspection data
-- PyGObject and pycairo
+### Packages
+
+Every [release](https://github.com/WaltRiceJr/nimbus/releases) carries
+ready-made packages:
+
+| File | For | Install with |
+| --- | --- | --- |
+| `nimbus-weather-*.noarch.rpm` | Fedora and friends | `sudo dnf install ./nimbus-weather-*.noarch.rpm` |
+| `nimbus-weather_*_all.deb` | Debian and Ubuntu | `sudo apt install ./nimbus-weather_*_all.deb` |
+| `nimbus-weather.flatpak` | any distribution | `flatpak install ./nimbus-weather.flatpak` |
+| `nimbus_weather-*.whl` | pip users | `pip install nimbus_weather-*.whl` |
+
+The RPM and deb use your system's GTK stack; the Flatpak bundles the GNOME
+runtime and needs nothing else installed. All of them put **NimbUS** in your
+application list and a `nimbus-weather` command on your path.
+
+### From source
+
+Requirements: Python 3.11+, GTK 4.10+ and libadwaita 1.4+ with their GObject
+introspection data, PyGObject and pycairo.
 
 On Fedora:
 
@@ -58,23 +84,27 @@ On Debian or Ubuntu:
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1
 ```
 
-## Running
-
-From a source checkout, without installing:
-
-```
-./nimbus.py
-```
-
-To install into your home directory (no root needed):
+Then, from a checkout — run in place, or install into your home directory
+(no root needed):
 
 ```
-./install.sh
+python3 -m nimbus     # run without installing
+./install.sh          # install launcher, icon and desktop entry to ~/.local
 ```
 
-That places the app under `~/.local/share/nimbus-weather`, installs the icon
-and a desktop entry, and creates a `nimbus-weather` launcher in
-`~/.local/bin`.
+### Building the packages yourself
+
+The `packaging/` directory holds everything the release pipeline uses:
+
+```
+packaging/nimbus-weather.spec      # RPM spec (Fedora pyproject macros)
+packaging/build-rpm.sh             # rpmbuild wrapper; RPMs land in dist/
+packaging/build-deb.sh             # stages and builds the binary .deb
+packaging/org.nimbus.Weather.yml   # flatpak-builder manifest (GNOME runtime)
+```
+
+Tagging `v*` runs `.github/workflows/release.yml`, which builds the wheel,
+sdist, RPM, deb and Flatpak bundle and attaches them all to a GitHub release.
 
 ## Keyboard shortcuts
 
@@ -90,6 +120,10 @@ and a desktop entry, and creates a `nimbus-weather` launcher in
 Forecasts, observations and alerts come from the National Weather Service API
 at `api.weather.gov`, which is public domain and requires no API key. It covers
 the United States and its territories only.
+
+Radar reflectivity is the MRMS mosaic from NOAA's GeoServer at
+`opengeo.ncep.noaa.gov`; satellite cloud cover is the GOES East/West infrared
+composite from NOAA's nowCOAST at `nowcoast.noaa.gov`.
 
 Place-name search uses the Open-Meteo geocoding API, since the NWS API has no
 search endpoint of its own. Results are filtered to the United States.
@@ -113,10 +147,12 @@ nimbus/
   conditions.py  NWS icon vocabulary -> conditions; the sky colour system
   drawing.py     Cairo primitives and the weather glyph set
   model.py       domain types and unit conversion
-  nws.py         API client, geocoding, caching, threading
+  nws.py         API client, geocoding, radar/satellite imagery, caching
   sky.py         the animated sky widget and standalone glyph icons
   store.py       favourites persistence
-  ui/            window, dashboard, location page, charts, stylesheet
+  ui/            window, dashboard, location page, radar, charts, stylesheet
+data/            desktop entry, AppStream metainfo, icons, screenshots
+packaging/       RPM spec, deb builder, flatpak manifest
 tools/           icon generation and development preview scripts
 ```
 
