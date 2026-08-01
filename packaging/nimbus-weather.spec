@@ -30,8 +30,11 @@ animated radar with satellite cloud cover, and NWS watches and warnings.
 %prep
 %autosetup -n nimbus-%{version}
 
+# -R: runtime requirements stay out of the build requirements. Building the
+# wheel never imports GTK, and the binary package's Requires are declared
+# explicitly above against the distro's own package names.
 %generate_buildrequires
-%pyproject_buildrequires
+%pyproject_buildrequires -R
 
 %build
 %pyproject_wheel
