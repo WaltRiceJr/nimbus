@@ -490,6 +490,11 @@ class HourlyStrip(Gtk.Widget):
             x = min(x, group_right - text_w - 10.0)
             if x + text_w < view_left or x > view_left + width:
                 continue
+            # A day being pushed off by its section's right edge slides left
+            # of the gutter and into the pinned title; hide it rather than
+            # let the two collide.
+            if x < gutter:
+                continue
 
             _draw_text(
                 cr, self, label, x, HEADER_BAND / 2 + 1, 12.5,
