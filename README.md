@@ -101,10 +101,20 @@ packaging/nimbus-weather.spec      # RPM spec (Fedora pyproject macros)
 packaging/build-rpm.sh             # rpmbuild wrapper; RPMs land in dist/
 packaging/build-deb.sh             # stages and builds the binary .deb
 packaging/org.nimbus.Weather.yml   # flatpak-builder manifest (GNOME runtime)
+packaging/release.sh               # cut a release: bump, commit, tag
 ```
 
-Tagging `v*` runs `.github/workflows/release.yml`, which builds the wheel,
-sdist, RPM, deb and Flatpak bundle and attaches them all to a GitHub release.
+To cut a release:
+
+```
+packaging/release.sh 1.1.0 --push
+```
+
+That bumps the version everywhere it lives (`nimbus/__init__.py`, the RPM
+spec and its changelog, the AppStream release list), commits, tags `v1.1.0`
+and pushes. The tag runs `.github/workflows/release.yml`, which builds the
+wheel, sdist, RPM, deb and Flatpak bundle and attaches them all to a GitHub
+release. Without `--push` it stops after tagging so you can review first.
 
 ## Keyboard shortcuts
 

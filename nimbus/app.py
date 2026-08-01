@@ -30,10 +30,10 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from . import __version__ as VERSION  # noqa: E402
 from .ui.window import NimbusWindow  # noqa: E402
 
 APP_ID = "org.nimbus.Weather"
-VERSION = "1.0.0"
 
 log = logging.getLogger(__name__)
 
