@@ -516,6 +516,12 @@ def fetch_daily(location: Location) -> list[DayEntry]:
             _value((night_period or {}).get("probabilityOfPrecipitation")) or 0.0,
         )
 
+        # The night fields carry the second half of a day whose first half
+        # is also present. After sunset the day period drops out of the feed
+        # and the night period IS the primary, so filling them again would
+        # print the same "Tonight" narrative twice.
+        follows_day = day_period is not None and night_period is not None
+
         days.append(
             DayEntry(
                 date=bucket["date"],
@@ -525,9 +531,12 @@ def fetch_daily(location: Location) -> list[DayEntry]:
                 condition=conditions.classify(icon, short),
                 short_forecast=short,
                 detailed_forecast=primary.get("detailedForecast") or "",
-                night_short_forecast=(night_period or {}).get("shortForecast") or "",
-                night_detailed_forecast=(night_period or {}).get("detailedForecast")
-                or "",
+                night_short_forecast=(
+                    night_period.get("shortForecast") or "" if follows_day else ""
+                ),
+                night_detailed_forecast=(
+                    night_period.get("detailedForecast") or "" if follows_day else ""
+                ),
                 precip_chance=precip,
                 wind_speed=str(primary.get("windSpeed") or ""),
                 wind_direction=str(primary.get("windDirection") or ""),
