@@ -109,9 +109,12 @@
 }
 
 /* The hourly card carries no padding of its own: the strip paints its
-   background, heading and dates edge to edge inside it. */
+   background, heading and dates edge to edge inside it. The strip's
+   background is opaque, so the frosted border the other cards wear would
+   read as a bright ring around it. */
 .card-panel-flush {
   padding: 0;
+  border: none;
 }
 
 .hourly-scroll {
