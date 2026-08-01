@@ -2,7 +2,7 @@
 #
 # Flatpak manifest. Build and install locally with:
 #
-#   flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
+#   flatpak install flathub org.gnome.Platform//50 org.gnome.Sdk//50
 #   flatpak-builder --user --install --force-clean build/flatpak \
 #       packaging/org.nimbus.Weather.yml
 #
@@ -14,7 +14,7 @@
 
 app-id: org.nimbus.Weather
 runtime: org.gnome.Platform
-runtime-version: '49'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 command: nimbus-weather
 
