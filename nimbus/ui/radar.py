@@ -58,9 +58,12 @@ log = logging.getLogger(__name__)
 
 TAU = math.pi * 2
 
-#: Ground widths available from the zoom control, in kilometres.
-ZOOM_LEVELS = (80.0, 160.0, 320.0, 640.0, 1200.0)
+#: Ground widths available from the zoom control, in miles.
+ZOOM_LEVELS = (50.0, 100.0, 200.0, 400.0, 750.0)
 DEFAULT_ZOOM = 2
+
+#: The imagery services speak kilometres; the interface speaks miles.
+KM_PER_MILE = 1.609344
 
 MAP_HEIGHT = 340
 
@@ -124,8 +127,12 @@ class RadarMap(Gtk.Widget):
         self.refresh()
 
     @property
-    def width_km(self) -> float:
+    def width_miles(self) -> float:
         return ZOOM_LEVELS[self._zoom]
+
+    @property
+    def width_km(self) -> float:
+        return ZOOM_LEVELS[self._zoom] * KM_PER_MILE
 
     def can_zoom(self, step: int) -> bool:
         return 0 <= self._zoom + step < len(ZOOM_LEVELS)
@@ -434,15 +441,15 @@ class RadarMap(Gtk.Widget):
         cr.fill()
 
     def _draw_scale_bar(self, cr, width: int, height: int, fg: RGB) -> None:
-        if self.width_km <= 0:
+        if self.width_miles <= 0:
             return
         # Choose a round distance that fills roughly a fifth of the view.
-        target = self.width_km / 5.0
+        target = self.width_miles / 5.0
         nice = min(
-            (10, 20, 25, 50, 100, 200, 250, 500),
+            (10, 20, 25, 50, 100, 150, 250, 500),
             key=lambda candidate: abs(candidate - target),
         )
-        bar_px = width * (nice / self.width_km)
+        bar_px = width * (nice / self.width_miles)
 
         x, y = 16.0, height - 22.0
         cr.set_source_rgba(0, 0, 0, 0.55)
@@ -462,7 +469,7 @@ class RadarMap(Gtk.Widget):
         cr.stroke()
 
         _draw_text(
-            cr, self, f"{nice:g} km", x + bar_px / 2, y - 12, 10.5,
+            cr, self, f"{nice:g} mi", x + bar_px / 2, y - 12, 10.5,
             (1.0, 1.0, 1.0), 0.92,
         )
 
@@ -651,6 +658,6 @@ class RadarCard(Gtk.Box):
         self._sync()
 
     def _sync(self) -> None:
-        self._range_label.set_label(f"{self.map.width_km:g} km across")
+        self._range_label.set_label(f"{self.map.width_miles:g} mi across")
         self._zoom_in.set_sensitive(self.map.can_zoom(-1))
         self._zoom_out.set_sensitive(self.map.can_zoom(1))
