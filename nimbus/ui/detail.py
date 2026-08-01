@@ -538,6 +538,12 @@ class LocationPage(Adw.NavigationPage):
         )
         body.append(self._reveal_hint)
 
+        credit = Gtk.Label(
+            label="Data provided by the National Weather Service and NOAA"
+        )
+        credit.add_css_class("data-credit")
+        body.append(credit)
+
         return body
 
     def _build_today_card(self) -> Gtk.Widget:

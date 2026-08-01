@@ -340,8 +340,7 @@ class DashboardPage(Adw.NavigationPage):
         # Same treatment as the city page: the bar floats over the sky.
         header.add_css_class("flat")
         header.add_css_class("hero-header")
-        title = Adw.WindowTitle(title="NimbUS", subtitle="National Weather Service")
-        header.set_title_widget(title)
+        header.set_title_widget(Adw.WindowTitle(title="NimbUS"))
 
         refresh = Gtk.Button.new_from_icon_name("view-refresh-symbolic")
         refresh.set_tooltip_text("Refresh all")
@@ -386,6 +385,12 @@ class DashboardPage(Adw.NavigationPage):
         self._stack.add_named(self._build_results(), "results")
 
         toolbar.set_content(self._stack)
+
+        credit = Gtk.Label(
+            label="Data provided by the National Weather Service and NOAA"
+        )
+        credit.add_css_class("data-credit")
+        toolbar.add_bottom_bar(credit)
 
         # The live sky backs the whole dashboard, exactly as on a city page;
         # the first pinned city's weather drives the scene.
