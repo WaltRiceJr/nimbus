@@ -187,6 +187,7 @@ def draw_moon(
         reach = radius * halo_scale
         halo = cairo.RadialGradient(cx, cy, radius * 0.7, cx, cy, reach)
         halo.add_color_stop_rgba(0.0, *colors.moon, 0.34 * glow * illumination)
+        halo.add_color_stop_rgba(0.5, *colors.moon, 0.12 * glow * illumination)
         halo.add_color_stop_rgba(1.0, *colors.moon, 0.0)
         cr.set_source(halo)
         cr.arc(cx, cy, reach, 0, TAU)
@@ -468,6 +469,12 @@ def draw_glyph(
     body_radius = size * 0.17
     light, dark = colors.cloud_light, colors.cloud_dark
 
+    def moon_halo_scale(cx: float, cy: float, radius: float) -> float:
+        # The glyph is often drawn edge-to-edge in a widget, so the halo
+        # must reach zero before the nearest side of the size box or the
+        # clip turns its smooth fade into a hard square.
+        return min(2.6, min(cx, cy, size - cx, size - cy) / radius)
+
     def celestial(cx: float, cy: float, radius: float, rays: bool = True) -> None:
         if is_day:
             draw_sun(cr, cx, cy, radius, colors, rays=rays, glow=0.7 * alpha)
@@ -475,6 +482,7 @@ def draw_glyph(
             draw_moon(
                 cr, cx, cy, radius, moon_phase, colors,
                 glow=0.7 * alpha, show_dark_limb=False,
+                halo_scale=moon_halo_scale(cx, cy, radius),
             )
 
     if condition in (Condition.CLEAR, Condition.HOT, Condition.COLD):
@@ -485,6 +493,7 @@ def draw_glyph(
             draw_moon(
                 cr, size * 0.5, size * 0.5, radius * 1.05, moon_phase, colors,
                 glow=alpha, show_dark_limb=False,
+                halo_scale=moon_halo_scale(size * 0.5, size * 0.5, radius * 1.05),
             )
         if condition is Condition.HOT:
             set_rgb(cr, colors.sun, 0.85 * alpha)
