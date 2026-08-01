@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 Name:           nimbus-weather
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Weather for the United States, using National Weather Service data
 
@@ -69,5 +69,8 @@ done
 %{_datadir}/icons/hicolor/*/apps/org.nimbus.Weather.png
 
 %changelog
+* Sat Aug 01 2026 Walt Rice - 1.0.1-1
+- Release 1.0.1
+
 * Fri Jul 31 2026 Walter Rice - 1.0.0-1
 - Initial package

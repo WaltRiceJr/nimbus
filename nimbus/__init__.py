@@ -21,4 +21,4 @@
 An independent project, not affiliated with or endorsed by the NWS or NOAA.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
